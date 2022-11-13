@@ -1,4 +1,3 @@
-import constants
 from imports import *
 
 
@@ -25,9 +24,13 @@ class Dataset:
     def get_input_files():
         print(f'- {constants.ICON_DATA} Obtaining data files...')
         while True:
-            search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
+            # todo: Maybe make this part interactive using the self.interactive class attribute.
+            # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
+            search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/*global*.nc'
+            # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/conv_lpj_hgpp_global_0.5deg_2018.nc'
             found_files = glob.glob(search_string)
-            if input(f'\tWill these files do? {found_files} (Y/n): ') == 'Y':
+            print(f'\tListing files...', *found_files, sep='\n\t\t')
+            if input(f'\tTotal of {len(found_files)} files. Will these do? (Y/n): ') == 'Y':
                 break
         return found_files
 
@@ -66,44 +69,111 @@ class Dataset:
         user_input = 'n'
         if os.path.exists(self.archive_in):
             user_input = input(f'- {constants.ICON_ARCHIVE} Be careful!!! You are trying to overwrite an already '
-                               f'existing {self.archive_in} file.\n\tAre you sure you want to overwrite?(Y/n)')
+                               f'existing {self.archive_in} file.\n\tAre you sure you want to overwrite?(Y/n): ')
         if user_input == 'Y':
             with open(file=self.archive_in, mode='w') as archive_out_handle:
                 json.dump(self.archive_out, archive_out_handle, indent=4)
         return
+
+
+class LPJDataset(Dataset):
+    def __init__(self, reason: str = None, interactive: bool = False):
+        super().__init__(reason, interactive)
+        self.data_object_spec = 'http://meta.icos-cp.eu/resources/cpmeta/biosphereModelingSpatial'
 
     def archive_files(self):
         """Archive file paths, names, and other information if needed."""
         print(f'- {constants.ICON_GEAR} Archiving system information of `.{self.file_type}` files... ', end='')
         for file_path in self.input_data:
             file_name = file_path.split('/')[-1]
-            base_key = file_name.split('_STILT')[0]
-            year = base_key.split('_')[1]
-            obtained_height = str(static_stilt[base_key.split('_')[0]]['alt'])
-            station_height = obtained_height if len(obtained_height) == 3 else '0' + obtained_height
-            other_specs = dict()
-            other_specs['station_height'] = station_height
-            with open(file=file_path, mode='r') as csv_handle:
-                other_specs['rows'] = sum(1 for line in csv_handle) - 1
-            data_object_spec = 'http://meta.icos-cp.eu/resources/cpmeta/stiltMoleFracTimeSer'
-            archive_out[base_key] = dict({
+            year = re.findall(r'\d{4}', file_name)
+            if len(year) != 1:
+                exit(f'\tError! Incorrect 4-digit year values: {year} where spotted in file: {file_name}.\n'
+                     f'\tNeed to have only one 4-digit year value specified in file\'s name.\n'
+                     f'\tZbunchpload will now exit.')
+            variable = [variable for variable in ['rtot', 'gpp', 'nee'] if variable in file_name]
+            if len(variable) != 1:
+                exit(f'\tError! Incorrect number of variables detected: {variable} file: {file_name}.\n'
+                     f'\tNeed to have only one variable specified in file\'s name.\n'
+                     f'\tZbunchpload will now exit.')
+            base_key = f'{variable[0]}_{year[0]}'
+            self.archive_out[base_key] = dict({
                 'file_path': file_path,
                 'file_name': file_name,
-                'station_height': station_height,
-                'year': year,
-                'try_ingest_command': build_try_ingest_command(file_path=file_path,
-                                                               data_object_spec=data_object_spec,
-                                                               other_specs=other_specs),
-                'other_specs': other_specs
-            })
-        print(check)
+                'try_ingest_components': self.build_try_ingest_components(file_path=file_path)})
+        # Sort archive's items.
+        self.archive_out = dict(sorted(self.archive_out.items()))
+        print(constants.ICON_CHECK)
         return
+
+    def build_try_ingest_components(self, file_path: str = None) -> dict:
+        """Build the try-ingest command for each data file."""
+        dataset = xarray.open_dataset(file_path)
+        variable_list = list(dataset.data_vars)
+        # The variable list must be formatted like this:
+        # '["variable_1", "variable_2", ...]'
+        # Any other way will probably result in try ingest error.
+        variables = ', '.join(f'["{variable}"]' for variable in variable_list)
+        try_ingest_url = 'https://data.icos-cp.eu/tryingest'
+        params = dict({'specUri': self.data_object_spec,
+                       'varnames': variables})
+        try_ingest_components = {'call': requests.put,
+                                 'url': try_ingest_url,
+                                 'params': params,
+                                 'file_path': file_path}
+        return try_ingest_components
+
+    def try_ingest(self):
+        """Tests ingestion of provided files to the Carbon Portal."""
+        print(f'- {constants.ICON_GEAR} Trying ingestion of {self.file_type} data files (This might take a while.) '
+              f'Expecting {len(self.input_data):>2} checks... ', end='')
+        command_list = list()
+        for key, value in self.archive_out.items():
+            command_list.append(value['try_ingest_components'].copy())
+            # Remove the function call from the archive.
+            # Functions stored in dictionaries cannot be json
+            # serialized.
+            value['try_ingest_components'].pop('call')
+        # Break up the list into smaller lists of n items per sublist.
+        # This way we can produce user output faster, so that the person
+        # who executes this script has an idea of what's happening.
+        # todo: Maybe make this part interactive using the self.interactive class attribute.
+        n = 3
+        lists_to_process = [command_list[i * n:(i + 1) * n] for i in range((len(command_list) + n - 1) // n)]
+        results = list()
+        for item_list in lists_to_process:
+            # Create a process for each item in the sublist.
+            with Pool(processes=len(item_list)) as pool:
+                # Each item in the sublist is passed as an argument to
+                # `execute_item()` function.
+                results.extend(pool.map(self.execute_item, item_list))
+        # Uncomment this line to print the results of the try-ingest.
+        # [print(result) for result in results]
+        checks = 0
+        for result in results:
+            if result['status_code'] == 200:
+                checks += 1
+        print(f'\n{67*" "}Received {checks:>2} checks')
+        return
+
+    @staticmethod
+    def execute_item(try_ingest_components: dict = None) -> dict:
+        """Used from processes spawned by try_ingest()."""
+        try_ingest_request = try_ingest_components['call'](
+            url=try_ingest_components['url'],
+            data=open(file=try_ingest_components['file_path'], mode='rb'),
+            params=try_ingest_components['params'])
+        if try_ingest_request.status_code == 200:
+            print(constants.ICON_CHECK, end='', flush=True)
+        else:
+            print('x', end='', flush=True)
+        return {'status_code': try_ingest_request.status_code, 'text': try_ingest_request.text}
 
     def one_shot(self):
         self.archive_files()
+        self.try_ingest()
+        self.store_current_archive()
 
 
 if __name__ == '__main__':
-    dataset = Dataset(reason='zois').one_shot()
-
-
+    LPJDataset(reason='zois').one_shot()
