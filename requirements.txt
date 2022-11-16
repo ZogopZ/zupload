@@ -2,3 +2,4 @@ nest_asyncio
 paramiko
 netCDF4
 xarray==2022.11.0
+humanize
