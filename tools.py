@@ -1,6 +1,3 @@
-import requests.cookies
-
-import constants
 from imports import *
 
 
@@ -30,7 +27,7 @@ def regenerate_full_archive(components_dir=None):
 
 def check_permissions():
     valid_cookie = False
-    print(f'- {constants.ICON_COOKIE} Authenticating user...')
+    print(f'- {constants.ICON_COOKIE:3} Authenticating user...')
     while not valid_cookie:
         if os.path.exists(constants.COOKIES) and validate_cookie():
             valid_cookie = True
@@ -86,3 +83,18 @@ def load_cookie():
     with open(constants.COOKIES, 'rb') as cookie_handle:
         return pickle.load(cookie_handle)
 
+
+def parse_arguments(mode: str = None) -> dict:
+    skipping_handlers = collections.OrderedDict({
+        'archive_files': True,
+        'try_ingest': True,
+        'archive_json': True,
+        'upload_metadata': True,
+        'upload_data': True
+    })
+    print(f'- {constants.ICON_GEAR:3} Mode parsing ({mode})...')
+    for handler, handler_items in zip(mode, skipping_handlers.items()):
+        boolean_handler = bool(int(handler))
+        print(f'\t{" ".join(handler_items[0].split("_")):20} =  {boolean_handler}')
+        skipping_handlers[handler_items[0]] = bool(int(handler))
+    return skipping_handlers

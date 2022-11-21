@@ -1,5 +1,3 @@
-nest_asyncio
-paramiko
-netCDF4
+netCDF4==1.6.2
 xarray==2022.11.0
-humanize
+humanize==4.4.0

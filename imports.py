@@ -5,6 +5,7 @@ from getpass import getpass
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
+import collections
 import glob
 import hashlib
 import json
@@ -13,6 +14,7 @@ import pickle
 import re
 import shlex
 import subprocess
+import sys
 
 
 # Related third party imports.

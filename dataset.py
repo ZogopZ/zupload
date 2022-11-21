@@ -1,5 +1,3 @@
-import constants
-import tools
 from imports import *
 
 
@@ -27,12 +25,13 @@ class Dataset:
     # todo: Do I need to keep this as a method?
     @staticmethod
     def get_input_files() -> list:
-        print(f'- {constants.ICON_DATA} Obtaining data files...')
+        print(f'- {constants.ICON_DATA:3} Obtaining data files...')
         while True:
             # todo: Maybe make this part interactive using the self.interactive class attribute.
             # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-            search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/*global*.nc'
+            # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/*global*.nc'
             # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/conv_lpj_hgpp_global_0.5deg_2018.nc'
+            search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022eu/nc2022/*eu*.nc'
             found_files = sorted(glob.glob(search_string))
             file_listing = list()
             for file in found_files:
@@ -48,7 +47,7 @@ class Dataset:
             if not self.interactive:
                 # Archive in file does not exist.
                 if not os.path.exists(self.archive_in):
-                    print(f'- {constants.ICON_ARCHIVE} Creating file {self.archive_in}... ', end='')
+                    print(f'- {constants.ICON_ARCHIVE:3} Creating file {self.archive_in}... ', end='')
                     Path(self.archive_in).touch()
                     # todo: Maybe remove these next 2 lines.
                     # with open(file=self.archive_in, mode='w+'):
@@ -57,11 +56,11 @@ class Dataset:
                 else:
                     # Archive in is empty.
                     if os.stat(self.archive_in).st_size == 0:
-                        print(f'- {constants.ICON_ARCHIVE} File {self.archive_in} exists but it is '
+                        print(f'- {constants.ICON_ARCHIVE:3} File {self.archive_in} exists but it is '
                               f'empty. Converting it to json... {constants.ICON_CHECK}')
                         with open(file=self.archive_in, mode='w') as archive_in_handle:
                             json.dump(dict(), archive_in_handle, indent=4)
-                    print(f'- {constants.ICON_ARCHIVE} Reading static {self.reason} data from file '
+                    print(f'- {constants.ICON_ARCHIVE:3} Reading static {self.reason} data from file '
                           f'{self.archive_in}... ', end='')
                     with open(file=self.archive_in, mode='r') as archive_in_handle:
                         archive_out = json.load(archive_in_handle)
@@ -70,15 +69,16 @@ class Dataset:
             # todo: Implement the user interaction of reading static files.
             #  Until then return an "error" message.
             elif self.interactive:
-                print(f'- {constants.ICON_ARCHIVE} Sorry this is not yet implemented. Blame rando.')
+                print(f'- {constants.ICON_ARCHIVE:3} Sorry this is not yet implemented. Blame rando.')
                 break
         return archive_out
 
     # todo: Do I need to keep this as a class method?
+    # todo: Do I need to add a mode flag for this?
     def store_current_archive(self):
         user_input = 'n'
         if os.path.exists(self.archive_in):
-            user_input = input(f'- {constants.ICON_ARCHIVE} Be careful!!! You are trying to overwrite an already '
+            user_input = input(f'- {constants.ICON_ARCHIVE:3} Be careful!!! You are trying to overwrite an already '
                                f'existing {self.archive_in} file.\n\tAre you sure you want to overwrite?(Y/n): ')
         if user_input == 'Y':
             with open(file=self.archive_in, mode='w') as archive_out_handle:
@@ -93,7 +93,7 @@ class LPJDataset(Dataset):
 
     def archive_files(self):
         """Archive file paths, names, and other information if needed."""
-        print(f'- {constants.ICON_GEAR} Archiving system information of `.{self.file_type}` files... ', end='')
+        print(f'- {constants.ICON_GEAR:3} Archiving system information of `.{self.file_type}` files... ', end='')
         for file_path in self.input_data:
             file_name = file_path.split('/')[-1]
             year = re.findall(r'\d{4}', file_name)
@@ -198,7 +198,7 @@ class LPJDataset(Dataset):
         `store_current_archive()` at the end of the script.
 
         """
-        print(f'- {constants.ICON_GEAR} Archiving meta-data... ', end='')
+        print(f'- {constants.ICON_GEAR:3} Archiving meta-data... ', end='')
         for base_key, base_info in self.archive_out.items():
             dataset = xarray.open_dataset(base_info['file_path'])
             base_info['json'] = dict({
@@ -218,8 +218,8 @@ class LPJDataset(Dataset):
                         'terrestrial NEE, GPP and total respiration in 0.5 degree. LPJ-GUESS is a process-based '
                         'dynamic global vegetation model, it uses time series data (e.g. climate forcing and '
                         'atmospheric carbon dioxide concentrations with WMO CO2 X2019 scale) as input to simulate the '
-                        'effects of environmental change on vegetation structure and composition in terms of plant '
-                        'functional types (PFTs), soil hydrology and biogeochemistry '
+                        'effects of environmental change on vegetation structure and composition in terms of European '
+                        'plant functional types (PFTs), soil hydrology and biogeochemistry '
                         '(Smith et al., 2001, https://web.nateko.lu.se/lpj-guess/).'
                     ),
                     'production': {
@@ -227,12 +227,12 @@ class LPJDataset(Dataset):
                             'http://meta.icos-cp.eu/resources/people/Michael_Mischurow',
                             'http://meta.icos-cp.eu/resources/people/Paul_Miller'
                         ],
-                        'creationDate': '2020-10-03T10:00:00Z',
+                        'creationDate': '2022-10-03T10:00:00Z',
                         'creator': 'http://meta.icos-cp.eu/resources/people/Zhendong_Wu',
                         'hostOrganization': 'http://meta.icos-cp.eu/resources/organizations/CP',
                         'sources': [],
                     },
-                    'spatial': 'http://meta.icos-cp.eu/resources/latlonboxes/globalLatLonBox',
+                    'spatial': 'http://meta.icos-cp.eu/resources/latlonboxes/lpjGuessEuropeLatLonBox',
                     'temporal': {
                         'interval': {
                             'start': dataset.time[0].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
@@ -240,7 +240,7 @@ class LPJDataset(Dataset):
                         },
                         'resolution': 'hourly'
                     },
-                    'title': f'LPJ-GUESS global hourly {base_info["variable"].upper()} for {base_info["year"]}',
+                    'title': f'LPJ-GUESS Europe hourly {base_info["variable"].upper()} for {base_info["year"]}',
                     'variables': [variable for variable in dataset.data_vars],
                 },
                 'submitterId': 'CP'
@@ -330,38 +330,40 @@ class LPJDataset(Dataset):
 
     # todo: implement mode mode for the one_shot handler.
     #  Instead of boolean arguments have 0 or 1.
-    def one_shot(self,
-                 skip_archive_files: bool = False,
-                 skip_try_ingest: bool = False,
-                 skip_archive_json: bool = False,
-                 skip_upload_metadata: bool = False,
-                 skip_upload_data: bool = False):
-        self.archive_files() if not skip_archive_files else print(
-            f'- {constants.ICON_HOLE} Skipping archiving of files...')
-        self.try_ingest() if not skip_try_ingest else print(
-            f'- {constants.ICON_HOLE} Skipping try ingestion of files...')
-        self.archive_json() if not skip_archive_json else print(
-            f'- {constants.ICON_HOLE} Skipping archiving of json...')
+    def one_shot(self, handlers=None):
+        if handlers is None:
+            handlers = {}
+        self.archive_files() if handlers['archive_files'] \
+            else print(f'- {constants.ICON_HOLE:3} Skipping archiving of files...')
+        self.try_ingest() if handlers['try_ingest'] \
+            else print(f'- {constants.ICON_HOLE:3} Skipping try ingestion of files...')
+        self.archive_json() if handlers['archive_json'] \
+            else print(f'- {constants.ICON_HOLE:3} Skipping archiving of json...')
         tools.check_permissions()
-        self.upload_metadata() if not skip_upload_metadata else print(
-            f'- {constants.ICON_HOLE} Skipping uploading of meta-data...')
-        self.upload_data() if not skip_upload_data else print(
-            f'- {constants.ICON_HOLE} Skipping uploading of data...')
+        self.upload_metadata() if handlers['upload_metadata'] \
+            else print(f'- {constants.ICON_HOLE:3} Skipping uploading of meta-data...')
+        self.upload_data() if handlers['upload_data'] \
+            else print(f'- {constants.ICON_HOLE:3} Skipping uploading of data...')
         self.store_current_archive()
+        self.printer()
 
-    def printer:
+    def printer(self):
+        print(f'- {constants.ICON_RECEIPT:3}Here\'s your meta-data:')
         for base_key, base_info in self.archive_out.items():
-            print(base_info['file_metadata_url'])
+            print('\t', base_info['file_metadata_url'])
         return
 
 
 if __name__ == '__main__':
-    # LPJDataset(reason='zois').one_shot(
+    skipping_handlers = tools.parse_arguments(sys.argv[1])
+    LPJDataset(reason='lpj_guess_eu').one_shot(skipping_handlers)
+    # LPJDataset(reason='lpj_guess_eu').one_shot(
     #     skip_archive_files=True,
     #     skip_try_ingest=True,
     #     skip_archive_json=True,
-    #     skip_upload_metadata=True,
+    # #     skip_upload_metadata=True,
     #     skip_upload_data=True
     # )
     # LPJDataset(reason='zois').one_shot()
-    dataset = LPJDataset(reason='zois')
+    # dataset = LPJDataset(reason='zois')
+    # LPJDataset(reason='lpj_guess_eu').one_shot()
