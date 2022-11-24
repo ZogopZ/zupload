@@ -27,7 +27,7 @@ def regenerate_full_archive(components_dir=None):
 
 def check_permissions():
     valid_cookie = False
-    print(f'- {constants.ICON_COOKIE:3} Authenticating user...')
+    print(f'- {constants.ICON_COOKIE:2}Authenticating user...')
     while not valid_cookie:
         if os.path.exists(constants.COOKIES) and validate_cookie():
             valid_cookie = True
@@ -92,9 +92,21 @@ def parse_arguments(mode: str = None) -> dict:
         'upload_metadata': True,
         'upload_data': True
     })
-    print(f'- {constants.ICON_GEAR:3} Mode parsing ({mode})...')
+    print(f'- {constants.ICON_GEAR:3}Mode parsing ({mode})...')
     for handler, handler_items in zip(mode, skipping_handlers.items()):
         boolean_handler = bool(int(handler))
         print(f'\t{" ".join(handler_items[0].split("_")):20} =  {boolean_handler}')
         skipping_handlers[handler_items[0]] = bool(int(handler))
     return skipping_handlers
+
+
+def find_files(search_string: str = None) -> list:
+    split_search_string = search_string.rsplit('/', 1)
+    directory = split_search_string[0]
+    regex = split_search_string[1]
+    pattern = re.compile(f'{regex}')
+    found_files = list()
+    for file_name in os.listdir(directory):
+        if pattern.match(file_name):
+            found_files.append(os.path.join(directory, file_name))
+    return sorted(found_files)
