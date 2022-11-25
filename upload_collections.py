@@ -1,0 +1,196 @@
+import time
+import requests
+import constants
+from pprint import pprint
+import tools
+import os
+import subprocess
+from _collections import OrderedDict
+
+monthly_collections = OrderedDict()
+
+
+def extract_monthly_collections(archive=None):
+    # Collect members from each component's monthly dataset.
+    # Each new collection will contain 5 components per month.
+    for monthly_key, monthly_component in archive.items():
+        component, reconstructed_key = monthly_key.rsplit('.', maxsplit=1)
+
+        monthly_collections.setdefault(reconstructed_key, dict({'members': dict(), 'sorted_members': list()}))
+        monthly_collections[reconstructed_key]['members'].setdefault(component, monthly_component['file_metadata_url'])
+    # Archive meta-data for each collection.
+    current_monthly_collections = tools.read_json('current_monthly_collections.json')
+    json_collection_files = 'input-files/json-standalone-collection-files'
+    for collection_key, collection_info in monthly_collections.items():
+        year, month = collection_key[0:4], collection_key[4:6]
+        sorted_members = list(collection_info['members'][key] for key in sorted(collection_info['members'].keys()))
+        collection_info['sorted_members'] = sorted_members
+        collection_info['json'] = {
+            "description":
+                f"Monthly collection of hourly CO2 fluxes for {year}-{month}, containing hourly "
+                f"estimates of biospheric fluxes, anthropogenic emissions (total and per sector), "
+                f"GFAS fire emissions and Jena CarboScope ocean fluxes, all re-gridded to match "
+                f"the resolution of the biospheric fluxes.\n\nNet ecosystem productivity (gross "
+                f"primary production minus respiration). Positive fluxes are emissions, negative "
+                f"mean uptake. These fluxes are the result of the SiB4 (Version 4.2-COS, hash "
+                f"1e29b25, https://doi.org/10.1029/2018MS001540) biosphere model, driven by ERA5 "
+                f"reanalysis data at a 0.5x0.5 degree resolution. The NEP per plant functional "
+                f"type are distributed according to the high resolution CORINE land-use map "
+                f"(https://land.copernicus.eu/pan-european/corine-land-cover), and aggregated to "
+                f"CTE-HR resolution.\n\n"
+                f"Anthropogenic emissions include contributions from public power, industry, "
+                f"households, ground transport, aviation, shipping, and calcination of cement. "
+                f"Our product does not include carbonation of cement and human respiration. Public "
+                f"power is based on ENTSO-E data (https://transparency.entsoe.eu/), Industry, "
+                f"Ground transport, Aviation, and Shipping is based on Eurostat data "
+                f"(https://ec.europa.eu/eurostat/databrowser/). Household emissions are based on a "
+                f"degree-day model, driven by ERA5 reanalysis data. Spatial distributions of the "
+                f"emissions are based on CAMS data (https://doi.org/10.5194/essd-14-491-2022). "
+                f"Cement emissions are taken from GridFED V.2021.3 "
+                f"(https://zenodo.org/record/5956612#.YoTmvZNBy9F).\n\n"
+                f"GFAS fire emissions (https://doi.org/10.5194/acp-18-5359-2018), re-gridded to "
+                f"match the resolution of the biosphere, fossil fuel, and ocean fluxes of the CTE-HR "
+                f"product. Please always cite the original GFAS data when using this file, and use "
+                f"the original data when only fire emissions are required. For more information, see "
+                f"https://doi.org/10.5281/zenodo.6477331 Contains modified Copernicus Atmosphere "
+                f"Monitoring Service Information [2020].\n\nOcean fluxes, based on a climatology of "
+                f"Jena CarboScope fluxes (https://doi.org/10.17871/CarboScope-oc_v2020, "
+                f"https://doi.org/10.5194/os-9-193-2013). An adjustment, based on windspeed and "
+                f"temperature, is applied to obtain hourly fluxes at the CTE-HR resolution. Positive "
+                f"fluxes are emissions and negative fluxes indicate uptake. Please always cite the "
+                f"original Jena CarboScope data when using this file, and use the original data when "
+                f"only low resolution ocean fluxes are required.\n\n"
+                f"For more information, see https://doi.org/10.5281/zenodo.6477331",
+            "members": collection_info['sorted_members'],
+            "submitterId": "CP",
+            "title": f"High-resolution, near-real-time fluxes over Europe from CTE-HR for {year}-{month}",
+            "isNextVersionOf": [] if collection_key not in current_monthly_collections.keys()
+            else current_monthly_collections[collection_key].rsplit('/')[-1]
+        }
+        collection_info['versions'] = [collection_info['json']['isNextVersionOf']] if collection_info['json']['isNextVersionOf'] else []
+        json_file_name = collection_key + '.json'
+        json_file_path = os.path.join(json_collection_files, json_file_name)
+        collection_info['json_file_path'] = json_file_path
+        tools.write_json(path=json_file_path, content=collection_info['json'])
+    print(f'- {constants.ICON_GEAR:3}Uploading monthly collections... '
+          f'(Expecting {len(monthly_collections.items())} checks)... ')
+    url = 'https://meta.icos-cp.eu/upload'
+    for collection_key, collection_info in monthly_collections.items():
+        data = open(file=collection_info['json_file_path'], mode='rb')
+        cookies = tools.load_cookie()
+        headers = {'Content-Type': 'application/json'}
+        upload_metadata_response = requests.post(url=url, data=data, headers=headers, cookies=cookies)
+        time.sleep(0.5)
+        if upload_metadata_response.status_code == 200:
+            collection_info['versions'].append(upload_metadata_response.text)
+            print(upload_metadata_response.text)
+        else:
+            print(upload_metadata_response.status_code, upload_metadata_response.text)
+            exit('ERROR')
+    tools.write_json(path='zois.json', content=monthly_collections)
+    return
+
+
+def extract_yearly_collections(monthly_collections=None):
+    current_yearly_collections = tools.read_json('current_yearly_collections.json')
+    json_collection_files = 'input-files/json-standalone-collection-files'
+    # Collect members for a yearly collection.
+    yearly_collections = dict()
+    for monthly_key, collection_content in monthly_collections.items():
+        year = monthly_key[0:4]
+        month = monthly_key[4:]
+        yearly_collections.setdefault(year, dict({'json': dict(), 'members': list(), 'versions': list()}))
+        yearly_collections[year]['members'].append(f'https://meta.icos-cp.eu/collections/{collection_content["versions"][-1]}')
+    for yearly_key, yearly_collection_content in yearly_collections.items():
+        yearly_collection_content['versions'] = [] if yearly_key not in current_yearly_collections.keys() \
+            else [current_yearly_collections[yearly_key].rsplit('/')[-1]]
+        # Archive collection's meta-data.
+        yearly_collection_content['json'] = {
+            "description":
+                f"Yearly collection of hourly CO2 fluxes for {yearly_key}, containing hourly estimates of biospheric fluxes, "
+                f"anthropogenic emissions (total and per sector), GFAS fire emissions and Jena CarboScope ocean "
+                f"fluxes, all re-gridded to match the resolution of the biospheric fluxes.\n\nNet ecosystem "
+                f"productivity (gross primary production minus respiration). Positive fluxes are emissions, negative "
+                f"mean uptake. These fluxes are the result of the SiB4 (Version 4.2-COS, hash 1e29b25, "
+                f"https://doi.org/10.1029/2018MS001540) biosphere model, driven by ERA5 reanalysis data at a 0.5x0.5 "
+                f"degree resolution. The NEP per plant functional type are distributed according to the high "
+                f"resolution CORINE land-use map (https://land.copernicus.eu/pan-european/corine-land-cover), and "
+                f"aggregated to CTE-HR resolution.\n\nAnthropogenic emissions include contributions from public power, "
+                f"industry, households, ground transport, aviation, shipping, and calcination of cement. Our product "
+                f"does not include carbonation of cement and human respiration. Public power is based on ENTSO-E data "
+                f"(https://transparency.entsoe.eu/), Industry, Ground transport, Aviation, and Shipping is based on "
+                f"Eurostat data (https://ec.europa.eu/eurostat/databrowser/). Household emissions are based on a "
+                f"degree-day model, driven by ERA5 reanalysis data. Spatial distributions of the emissions are based "
+                f"on CAMS data (https://doi.org/10.5194/essd-14-491-2022). Cement emissions are taken from GridFED "
+                f"V.2021.3 (https://zenodo.org/record/5956612#.YoTmvZNBy9F).\n\nGFAS fire emissions "
+                f"(https://doi.org/10.5194/acp-18-5359-2018), re-gridded to match the resolution of the biosphere, "
+                f"fossil fuel, and ocean fluxes of the CTE-HR product. Please always cite the original GFAS data when "
+                f"using this file, and use the original data when only fire emissions are required. For more "
+                f"information, see https://doi.org/10.5281/zenodo.6477331 Contains modified Copernicus Atmosphere "
+                f"Monitoring Service Information [2020].\n\nOcean fluxes, based on a climatology of Jena CarboScope "
+                f"fluxes (https://doi.org/10.17871/CarboScope-oc_v2020, https://doi.org/10.5194/os-9-193-2013). "
+                f"An adjustment, based on windspeed and temperature, is applied to obtain hourly fluxes at the CTE-HR "
+                f"resolution. Positive fluxes are emissions and negative fluxes indicate uptake. Please always cite "
+                f"the original Jena CarboScope data when using this file, and use the original data when only low "
+                f"resolution ocean fluxes are required.\n\nFor more information, see "
+                f"https://doi.org/10.5281/zenodo.6477331",
+            "members": yearly_collection_content['members'],
+            "submitterId": "CP",
+            "title": f"High-resolution, near-real-time fluxes over Europe from CTE-HR for {yearly_key}",
+            "isNextVersionOf": [] if yearly_key not in current_yearly_collections.keys() else
+            current_yearly_collections[yearly_key].rsplit('/')[-1]
+        }
+        # Archive meta-data for each collection.
+        json_file_name = f'{yearly_key}.json'
+        json_file_path = os.path.join(json_collection_files, json_file_name)
+        yearly_collection_content['json_file_path'] = json_file_path
+        tools.write_json(path=json_file_path, content=yearly_collection_content['json'])
+    print(f'- {constants.ICON_GEAR:3}Uploading yearly collections... '
+          f'(Expecting {len(yearly_collections.items())} checks)... ')
+    url = 'https://meta.icos-cp.eu/upload'
+    for collection_key, collection_info in yearly_collections.items():
+        data = open(file=collection_info['json_file_path'], mode='rb')
+        cookies = tools.load_cookie()
+        headers = {'Content-Type': 'application/json'}
+        upload_metadata_response = requests.post(url=url, data=data, headers=headers, cookies=cookies)
+        time.sleep(0.5)
+        if upload_metadata_response.status_code == 200:
+            collection_info['versions'].append(upload_metadata_response.text.rsplit('/')[-1])
+            print(upload_metadata_response.text)
+        else:
+            print(upload_metadata_response.status_code, upload_metadata_response.text)
+            exit('ERROR')
+    tools.write_json(path='zois_yearly.json', content=yearly_collections)
+    return
+
+
+def archive_json_curl():
+    print(f'- {constants.ICON_GEAR:3}Archiving json curl commands for collections... ', end='')
+    for collection_key, collection_info in monthly_collections.items():
+        metadata_curl_command_list = \
+            ["curl", "-s", "--cookie", "cookies.txt", "-H",
+             '"Content-Type: application/json"',
+             "-X", "POST",
+             "-d", f"@{collection_info['json_file_path']}",
+             "https://meta.icos-cp.eu/upload"]
+        collection_info['curl'] = dict({
+            'metadata_using_bash': ' '.join(metadata_curl_command_list),
+            'metadata_using_python': metadata_curl_command_list,
+        })
+    print(constants.CHECK_ICON)
+    return
+
+
+def upload_collections():
+
+    return
+
+
+if __name__ == '__main__':
+    archive_in = tools.read_json(path='backup/archive_in_nc_2022_07.json')
+    extract_collections(archive=archive_in, interval='monthly')
+    archive_json_curl()
+    pprint(monthly_collections)
+    tools.check_permissions()
+    upload_collections()
+    tools.write_json(path='backup/monthly_collections_2022_07.json', content=monthly_collections)
