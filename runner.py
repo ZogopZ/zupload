@@ -3,9 +3,12 @@ from imports import *
 import tools
 
 if __name__ == '__main__':
-    static_mode = '00110'
-    skipping_handlers = tools.parse_arguments(static_mode)
-    my_class = cte_hr_dataset.CteHrDataset(reason='cte_hr').one_shot(skipping_handlers)
+    if len(sys.argv) == 2:
+        skipping_handlers = tools.parse_arguments(sys.argv[1])
+    else:
+        static_mode = '000000'
+        skipping_handlers = tools.parse_arguments(static_mode)
+    my_class = lpj_guess_dataset.LpjGuessDataset(reason='lpj_guess_global').one_shot(skipping_handlers)
     # skipping_handlers = tools.parse_arguments(sys.argv[1])
     # # backup_archive = tools.read_json(path='input-files/in-out-archives/archive_in_nc_2022_07.json')
     # current_archive = tools.read_json(path='input-files/in-out-archives/archive_in_cte_hr.json')
@@ -16,10 +19,10 @@ if __name__ == '__main__':
     #             print(constants.ICON_CHECK, end='')
     #         else:
     #             print(key)
-        # if 'anthropogenic' in key:
-        #     value.setdefault('handlers', dict({'try_ingest': True, 'upload_metadata': True, 'upload_data': True}))
-        # else:
-        #     value.setdefault('handlers', dict({'try_ingest': False, 'upload_metadata': False, 'upload_data': False}))
+    # if 'anthropogenic' in key:
+    #     value.setdefault('handlers', dict({'try_ingest': True, 'upload_metadata': True, 'upload_data': True}))
+    # else:
+    #     value.setdefault('handlers', dict({'try_ingest': False, 'upload_metadata': False, 'upload_data': False}))
     #         value.update(versions=[value['file_metadata_url']])
     # #     else:
     # #         value.update(versions=[])

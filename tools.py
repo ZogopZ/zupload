@@ -87,15 +87,17 @@ def load_cookie():
 def parse_arguments(mode: str = None) -> dict:
     skipping_handlers = collections.OrderedDict({
         'archive_files': True,
+        'fill_handlers': True,
         'try_ingest': True,
         'archive_json': True,
         'upload_metadata': True,
-        'upload_data': True
+        'upload_data': True,
+        'store_current_archive': True
     })
     print(f'- {constants.ICON_GEAR:3}Mode parsing ({mode})...')
     for handler, handler_items in zip(mode, skipping_handlers.items()):
         boolean_handler = bool(int(handler))
-        print(f'\t{" ".join(handler_items[0].split("_")):20} =  {boolean_handler}')
+        print(f'\t{" ".join(handler_items[0].split("_")):21} =  {boolean_handler}')
         skipping_handlers[handler_items[0]] = bool(int(handler))
     return skipping_handlers
 

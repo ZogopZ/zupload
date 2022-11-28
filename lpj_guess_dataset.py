@@ -1,4 +1,22 @@
+# Format read from https://peps.python.org/pep-0008/#imports.
+# Standard library imports.
+# from datetime import datetime
+# from multiprocessing import Pool
+# from pathlib import Path
+# import hashlib
+# import json
+import os
+import re
+
+# Related third party imports.
+# import humanize
+import requests
+import xarray
+
+# Local application/library specific imports.
+import constants
 import dataset
+import tools
 
 
 class LpjGuessDataset(dataset.Dataset):
@@ -8,7 +26,7 @@ class LpjGuessDataset(dataset.Dataset):
 
     def archive_files(self):
         """Archive file paths, names, and other information if needed."""
-        print(f'- {constants.ICON_GEAR:3} Archiving system information of `.{self.file_type}` files... ', end='')
+        print(f'- {constants.ICON_GEAR:3}Archiving system information of `.{self.file_type}` files... ', end='')
         for file_path in self.input_data:
             file_name = file_path.split('/')[-1]
             year = re.findall(r'\d{4}', file_name)
@@ -69,7 +87,8 @@ class LpjGuessDataset(dataset.Dataset):
         `store_current_archive()` at the end of the script.
 
         """
-        print(f'- {constants.ICON_GEAR:3} Archiving meta-data... ', end='')
+        intermediate = tools.read_json(path='lpj_guess_old_global.json')
+        print(f'- {constants.ICON_GEAR:3} Archiving meta-data... ', end='', flush=True)
         for base_key, base_info in self.archive_out.items():
             if not base_info['handlers']['archive_json']:
                 continue
@@ -77,7 +96,8 @@ class LpjGuessDataset(dataset.Dataset):
             base_info['json'] = dict({
                 'fileName': base_info['file_name'],
                 'hashSum': self.get_hash_sum(file_path=base_info['file_path']),
-                'isNextVersionOf': [],
+                # Get the previous version from the intermediate dictionary.
+                'isNextVersionOf': intermediate.get(base_info['file_name'], []),
                 'objectSpecification': self.dataset_object_spec,
                 'references': {
                     'keywords': [
@@ -86,26 +106,44 @@ class LpjGuessDataset(dataset.Dataset):
                     'licence': 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence'
                 },
                 'specificInfo': {
+                    # LPJ-GUESS Global description.
                     'description': (
+                        'The product is generated in 2021. '
                         'LPJ-GUESS (revision 6562) forced with hourly ERA5 climate datasets to simulate global '
                         'terrestrial NEE, GPP and total respiration in 0.5 degree. LPJ-GUESS is a process-based '
                         'dynamic global vegetation model, it uses time series data (e.g. climate forcing and '
                         'atmospheric carbon dioxide concentrations with WMO CO2 X2019 scale) as input to simulate the '
-                        'effects of environmental change on vegetation structure and composition in terms of European '
-                        'plant functional types (PFTs), soil hydrology and biogeochemistry '
-                        '(Smith et al., 2001, https://web.nateko.lu.se/lpj-guess/).'
+                        'effects of environmental change on vegetation structure and composition in terms of plant '
+                        'functional types (PFTs), soil hydrology and biogeochemistry (Smith et al., 2001, '
+                        'https://web.nateko.lu.se/lpj-guess/).'
                     ),
+                    # LPJ-GUESS Europe description.
+                    # 'description': (
+                    #     'LPJ-GUESS (revision 6562) forced with hourly ERA5 climate datasets to simulate global '
+                    #     'terrestrial NEE, GPP and total respiration in 0.5 degree. LPJ-GUESS is a process-based '
+                    #     'dynamic global vegetation model, it uses time series data (e.g. climate forcing and '
+                    #     'atmospheric carbon dioxide concentrations with WMO CO2 X2019 scale) as input to simulate the '
+                    #     'effects of environmental change on vegetation structure and composition in terms of European '
+                    #     'plant functional types (PFTs), soil hydrology and biogeochemistry '
+                    #     '(Smith et al., 2001, https://web.nateko.lu.se/lpj-guess/).'
+                    # ),
                     'production': {
                         'contributors': [
                             'http://meta.icos-cp.eu/resources/people/Michael_Mischurow',
                             'http://meta.icos-cp.eu/resources/people/Paul_Miller'
                         ],
-                        'creationDate': '2022-10-03T10:00:00Z',
+                        # LPJ-GUESS Global production time.
+                        'creationDate': '2021-10-03T10:00:00Z',
+                        # LPJ-GUESS Europe production time.
+                        # 'creationDate': '2022-10-03T10:00:00Z',
                         'creator': 'http://meta.icos-cp.eu/resources/people/Zhendong_Wu',
                         'hostOrganization': 'http://meta.icos-cp.eu/resources/organizations/CP',
                         'sources': [],
                     },
-                    'spatial': 'http://meta.icos-cp.eu/resources/latlonboxes/lpjGuessEuropeLatLonBox',
+                    # LPJ-GUESS Global latitute-longitude box.
+                    'spatial': 'http://meta.icos-cp.eu/resources/latlonboxes/globalLatLonBox',
+                    # LPJ-GUESS Europe latitute-longitude box.
+                    # 'spatial': 'http://meta.icos-cp.eu/resources/latlonboxes/lpjGuessEuropeLatLonBox',
                     'temporal': {
                         'interval': {
                             'start': xarray_dataset.time[0].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
@@ -113,7 +151,12 @@ class LpjGuessDataset(dataset.Dataset):
                         },
                         'resolution': 'hourly'
                     },
-                    'title': f'LPJ-GUESS Europe hourly {base_info["variable"].upper()} for {base_info["year"]}',
+                    # LPJ-GUESS Global title.
+                    # LPJ-GUESS global hourly GPP for 2017 (generated in 2021)
+                    'title': f'LPJ-GUESS global hourly {base_info["variable"].upper()} for {base_info["year"]} '
+                             f'(generated in 2021)',
+                    # LPJ-GUESS Europe title.
+                    # 'title': f'LPJ-GUESS Europe hourly {base_info["variable"].upper()} for {base_info["year"]}',
                     'variables': [variable for variable in xarray_dataset.data_vars],
                 },
                 'submitterId': 'CP'
@@ -123,10 +166,4 @@ class LpjGuessDataset(dataset.Dataset):
             base_info['json_file_path'] = json_file_path
             tools.write_json(path=json_file_path, content=base_info['json'])
         print(constants.ICON_CHECK, flush=True)
-        return
-
-    def printer(self):
-        print(f'- {constants.ICON_RECEIPT:3}Here\'s your meta-data:')
-        for base_key, base_info in self.archive_out.items():
-            print('\t', base_info['file_metadata_url'])
         return

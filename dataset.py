@@ -2,6 +2,7 @@
 # Standard library imports.
 from multiprocessing import Pool
 from pathlib import Path
+from pprint import pprint
 import hashlib
 import json
 import os
@@ -38,20 +39,7 @@ class Dataset:
         self.file_type = self.input_data[0].split('.')[-1]
         self.interactive = interactive
         self.archive_out = self.read_static_data()
-        for base_key, base_info in self.archive_out.items():
-            # Initialize handlers for your static read files.
-            # Zbunchpload will use and update json parts in archive_in
-            # only if their respective handlers are true.
-            if base_info['file_path'] in self.input_data:
-                base_info.update(handlers=dict({'archive_json': True,
-                                                'try_ingest': True,
-                                                'upload_metadata': True,
-                                                'upload_data': True}))
-            else:
-                base_info.update(handlers=dict({'archive_json': False,
-                                                'try_ingest': False,
-                                                'upload_metadata': False,
-                                                'upload_data': False}))
+        return
 
     # todo: Do I need to keep this as a method?
     @staticmethod
@@ -60,14 +48,7 @@ class Dataset:
         while True:
             # todo: Maybe make this part interactive using the self.interactive class attribute.
             # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-            # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/*global*.nc'
-            # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/conv_lpj_hgpp_global_0.5deg_2018.nc'
-            # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022eu/nc2022/*eu*.nc'
-            # search_string = '/ctehires/upload/remco/.*2017.*.nc'
-            # First update all existing files in
-            # collection: https://meta.icos-cp.eu/collections/cRyrAvXrE-f_wLaNld3zFeg6
-            # search_string = '/ctehires/upload/remco/anthropogenic(.*)(((2017|2018|2019|2020|2021)(\d{2}))|((2022)(0)([1-7]))).nc'
-            search_string = '/ctehires/upload/remco/.*(2022)(08).nc'
+            search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/.*global.*.nc'
             found_files = sorted(tools.find_files(search_string=search_string))
             file_listing = list()
             for file in found_files:
@@ -97,7 +78,7 @@ class Dataset:
                               f'empty. Converting it to json... {constants.ICON_CHECK}')
                         with open(file=self.archive_in, mode='w') as archive_in_handle:
                             json.dump(dict(), archive_in_handle, indent=4)
-                    print(f'- {constants.ICON_ARCHIVE:2}Reading static {self.reason} data from file '
+                    print(f'- {constants.ICON_ARCHIVE:3}Reading static {self.reason} data from file '
                           f'{self.archive_in}... ', end='')
                     with open(file=self.archive_in, mode='r') as archive_in_handle:
                         archive_out = json.load(archive_in_handle)
@@ -109,6 +90,25 @@ class Dataset:
                 print(f'- {constants.ICON_ARCHIVE:3}Sorry this is not yet implemented. Blame rando.')
                 break
         return archive_out
+
+    def fill_handlers(self):
+        for base_key, base_info in self.archive_out.items():
+            # Initialize handlers for your static read files.
+            # Zbunchpload will use and update json parts in archive_in
+            # only if their respective handlers are true.
+            if base_info['file_path'] in self.input_data:
+                base_info.setdefault('handlers', dict())
+                base_info.update(handlers=dict({'archive_json': True,
+                                                'try_ingest': True,
+                                                'upload_metadata': True,
+                                                'upload_data': True}))
+            else:
+                base_info.setdefault('handlers', dict())
+                base_info.update(handlers=dict({'archive_json': False,
+                                                'try_ingest': False,
+                                                'upload_metadata': False,
+                                                'upload_data': False}))
+        return
 
     def archive_files(self):
         return
@@ -287,10 +287,15 @@ class Dataset:
 
     def printer(self):
         print(f'- {constants.ICON_RECEIPT:3}Here\'s your meta-data:')
+        # Used to align user output since keys can vary in length.
+        base_key_max_length = len(max(self.archive_out.keys(), key=len))
         for base_key, base_info in self.archive_out.items():
             if base_info['file_path'] not in self.input_data:
                 continue
-            print(f'\t{base_key:34} {base_info["file_metadata_url"]}')
+            if 'file_metadata_url' in base_info.keys():
+                print(f'\t{base_key:{base_key_max_length}} {base_info["file_metadata_url"]}')
+            else:
+                print(f'\t{base_key:{base_key_max_length}} No info for file meta-data url')
         print(f'\tTotal of {len(self.input_data)} items.')
         return
 
@@ -301,6 +306,8 @@ class Dataset:
             handlers = {}
         self.archive_files() if handlers['archive_files'] \
             else print(f'- {constants.ICON_HOLE:3}Skipping archiving of files...')
+        self.fill_handlers() if handlers['fill_handlers'] \
+            else print(f'- {constants.ICON_HOLE:3}Skipping handler filling...')
         self.try_ingest() if handlers['try_ingest'] \
             else print(f'- {constants.ICON_HOLE:3}Skipping try ingestion of files...')
         self.archive_json() if handlers['archive_json'] \
@@ -310,5 +317,6 @@ class Dataset:
             else print(f'- {constants.ICON_HOLE:3}Skipping uploading of meta-data...')
         self.upload_data() if handlers['upload_data'] \
             else print(f'- {constants.ICON_HOLE:3}Skipping uploading of data...')
-        self.store_current_archive()
+        self.store_current_archive() if handlers['store_current_archive'] \
+            else print(f'- {constants.ICON_HOLE:3}Skipping storing of archive...')
         self.printer()
