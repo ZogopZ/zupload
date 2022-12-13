@@ -29,16 +29,46 @@ class Dataset:
             return
         self.reason = reason
         # Initialize needed directories & files.
-        self.archives_dir = 'input-files/in-out-archives/'
-        self.archive_in = f'input-files/in-out-archives/archive_in_{self.reason}.json'
-        self.json_standalone_files = f'input-files/json-standalone-files/{self.reason.replace("_", "-")}/'
+        self.master_dir = f'input-files/{self.reason.replace("_", "-")}'
+        self.archives_dir = os.path.join(self.master_dir, 'in-out-archives')
+        self.archive_in = os.path.join(self.archives_dir, f'{self.reason}.json')
+        self.json_standalone_files = os.path.join(self.master_dir,
+                                                  f'json-standalone-files/{self.reason.replace("_", "-")}')
+        Path(self.master_dir).mkdir(parents=True, exist_ok=True)
         Path(self.archives_dir).mkdir(parents=True, exist_ok=True)
         Path(self.json_standalone_files).mkdir(parents=True, exist_ok=True)
-        self.input_data = self.get_input_files()
-        # todo: Need to generalise this.
-        self.file_type = self.input_data[0].split('.')[-1]
         self.interactive = interactive
         self.archive_out = self.read_static_data()
+        self._input_data = None
+        self.file_type = None
+        return
+
+    @property
+    def input_data(self):
+        return self._input_data
+
+    @input_data.setter
+    def input_data(self, input_content=None):
+        print(f'- {constants.ICON_DATA:3}Obtaining data files...')
+        found_files = list()
+        file_listing = list()
+        while True:
+            if input_content is None:
+                # todo: Maybe make this part interactive using the self.interactive class attribute.
+                search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
+                # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/.*global.*.nc'
+                found_files = sorted(tools.find_files(search_string=search_string))
+            else:
+                found_files = sorted(input_content)
+            file_listing = list()
+            for file in found_files:
+                file_listing.append(f'{file} ({humanize.naturalsize(os.stat(file).st_size)})')
+            if input(f'\tWould you like to see the files? (Y/n): ') == 'Y':
+                print(f'\tListing files...', *file_listing, sep='\n\t\t')
+            if input(f'\tTotal of {len(found_files)} files. Will these do? (Y/n): ') == 'Y':
+                break
+        self.file_type = self.input_data[0].split('.')[-1]
+        self._input_data = found_files
         return
 
     # todo: Do I need to keep this as a method?
@@ -198,15 +228,17 @@ class Dataset:
                                            params=try_ingest_components['params'])
         return {'status_code': try_ingest_response.status_code, 'text': try_ingest_response.text}
 
-    # todo: maybe move this to tools.py
-    @staticmethod
-    def get_hash_sum(file_path: str = None) -> str:
-        sha256_hash = hashlib.sha256()
-        with open(file=file_path, mode='rb') as file_handle:
-            # Read and update hash string value in blocks of 4K
-            for byte_block in iter(lambda: file_handle.read(4096), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest()
+    def re_ingest(self):
+        for base_key, base_info in self.archive_out.items():
+            if not base_info['handlers']['upload_metadata']:
+                continue
+            re_ingest_command_list = \
+                ["curl", "-s", "--cookie", "cookies.txt",
+                 "-X", "POST",
+                 base_info['file_data_url']]
+            re_ingest_command = shlex.split(' '.join(re_ingest_command_list))
+            print(re_ingest_command)
+        return
 
     def upload_metadata(self):
         checks = 0
@@ -284,6 +316,16 @@ class Dataset:
                 input('\tYou can press ctrl+c to stop this program or press any other key to continue... ')
                 # todo: Implement exit in case of incorrect data upload.
         return
+
+    # todo: maybe move this to tools.py
+    @staticmethod
+    def get_hash_sum(file_path: str = None) -> str:
+        sha256_hash = hashlib.sha256()
+        with open(file=file_path, mode='rb') as file_handle:
+            # Read and update hash string value in blocks of 4K
+            for byte_block in iter(lambda: file_handle.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
 
     def printer(self):
         print(f'- {constants.ICON_RECEIPT:3}Here\'s your meta-data:')

@@ -22,6 +22,7 @@ import tools
 class LpjGuessDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
         super().__init__(reason, interactive)
+        self.input_data = None
         self.dataset_object_spec = constants.OBJECT_SPECS['biosphere_modeling_spatial']
 
     def archive_files(self):

@@ -21,6 +21,7 @@ import tools
 
 class CteHrDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
+        self.input_data = None
         super().__init__(reason, interactive)
 
     def archive_files(self):
