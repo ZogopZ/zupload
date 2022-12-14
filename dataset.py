@@ -78,7 +78,10 @@ class Dataset:
         while True:
             # todo: Maybe make this part interactive using the self.interactive class attribute.
             # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-            search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/.*global.*.nc'
+            # Home directory for cte-hr fluxes.
+            # search_string = '/ctehires/upload/remco/
+            # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/.*global.*.nc'
+            search_string = '/ctehires/upload/remco/.*202209.*.nc'
             found_files = sorted(tools.find_files(search_string=search_string))
             file_listing = list()
             for file in found_files:
