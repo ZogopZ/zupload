@@ -19,5 +19,7 @@ OBJECT_SPECS = {
     'anthropogenic_emission_model_results': 'http://meta.icos-cp.eu/resources/cpmeta/anthropogenicEmissionModelResults',
     'biospheric_model_results': 'http://meta.icos-cp.eu/resources/cpmeta/biosphericModelResults',
     'file_emission_model_results': 'http://meta.icos-cp.eu/resources/cpmeta/fireEmissionModelResults',
-    'oceanic_flux_model_results': 'http://meta.icos-cp.eu/resources/cpmeta/oceanicFluxModelResults'
+    'oceanic_flux_model_results': 'http://meta.icos-cp.eu/resources/cpmeta/oceanicFluxModelResults',
+    # One-time CSR-LUMIA datasets' upload.
+    'inversion_modeling_spatial': 'http://meta.icos-cp.eu/resources/cpmeta/inversionModelingSpatial'
 }
