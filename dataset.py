@@ -39,8 +39,8 @@ class Dataset:
         Path(self.json_standalone_files).mkdir(parents=True, exist_ok=True)
         self.interactive = interactive
         self.archive_out = self.read_static_data()
-        self._input_data = None
-        self.file_type = None
+        self.input_data = None
+        self.file_type = self.input_data[0].split('.')[-1]
         return
 
     @property
@@ -55,8 +55,8 @@ class Dataset:
         while True:
             if input_content is None:
                 # todo: Maybe make this part interactive using the self.interactive class attribute.
-                search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-                # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/.*global.*.nc'
+                # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
+                search_string = 'input-files/data-files/.*.nc'
                 found_files = sorted(tools.find_files(search_string=search_string))
             else:
                 found_files = sorted(input_content)
@@ -67,7 +67,6 @@ class Dataset:
                 print(f'\tListing files...', *file_listing, sep='\n\t\t')
             if input(f'\tTotal of {len(found_files)} files. Will these do? (Y/n): ') == 'Y':
                 break
-        self.file_type = self.input_data[0].split('.')[-1]
         self._input_data = found_files
         return
 
