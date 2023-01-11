@@ -132,11 +132,11 @@ class OneTimeDataset(dataset.Dataset):
                     'licence': 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence'
                 },
                 'specificInfo': {
-                    'description': f'{xarray_dataset.summary} Supplementary material for Munassar, S., Monteil, G., '
+                    'description': f'{xarray_dataset.summary}. Supplementary material for Munassar, S., Monteil, G., '
                                    f'Scholze, M., Karstens, U., Rödenbeck, C., Koch, F.-T., Totsche, K. U., and '
                                    f'Gerbig, C.: Impact of atmospheric transport on CO2 flux estimates derived from '
                                    f'the atmospheric tracer inversions, Atmos. Chem. Phys. Discuss. [preprint], '
-                                   f'https://doi.org/10.5194/acp-2022-510, in review, 2022',
+                                   f'https://doi.org/10.5194/acp-2022-510, in review, 2022.',
                     'production': {
                         'contributors': [
                             'http://meta.icos-cp.eu/resources/people/Saqr_Munassar',
