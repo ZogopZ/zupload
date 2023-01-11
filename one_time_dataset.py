@@ -1,6 +1,7 @@
 # Format read from https://peps.python.org/pep-0008/#imports.
 # Standard library imports.
 from datetime import datetime
+from math import ceil, floor
 from multiprocessing import Pool
 from pathlib import Path
 import hashlib
@@ -127,13 +128,18 @@ class OneTimeDataset(dataset.Dataset):
                 'isNextVersionOf': [] if not base_info['versions'] else base_info['versions'][-1].rsplit('/')[-1],
                 'objectSpecification': base_info['dataset_object_spec'],
                 'references': {
-                    'keywords': ['carbon flux'],
+                    'keywords': ['inverse modeling', 'Carbon Cycle'],
                     'licence': 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence'
                 },
                 'specificInfo': {
-                    'description': xarray_dataset.summary,
+                    'description': f'{xarray_dataset.summary}. Supplementary material for Munassar, S., Monteil, G., '
+                                   f'Scholze, M., Karstens, U., Rödenbeck, C., Koch, F.-T., Totsche, K. U., and '
+                                   f'Gerbig, C.: Impact of atmospheric transport on CO2 flux estimates derived from '
+                                   f'the atmospheric tracer inversions, Atmos. Chem. Phys. Discuss. [preprint], '
+                                   f'https://doi.org/10.5194/acp-2022-510, in review, 2022.',
                     'production': {
                         'contributors': [
+                            'http://meta.icos-cp.eu/resources/people/Saqr_Munassar',
                             'http://meta.icos-cp.eu/resources/people/Guillaume_Monteil'
                         ],
                         'creationDate': creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -144,23 +150,23 @@ class OneTimeDataset(dataset.Dataset):
                     'spatial': {
                         'min':
                             {
-                                'lat': xarray_dataset.lat.min().item(),
-                                'lon': xarray_dataset.lon.min().item()
+                                'lat': floor(xarray_dataset.lat.min().item()),
+                                'lon': floor(xarray_dataset.lon.min().item())
                             },
                         'max':
                             {
-                                'lat': xarray_dataset.lat.max().item(),
-                                'lon': xarray_dataset.lon.max().item()
+                                'lat': ceil(xarray_dataset.lat.max().item()),
+                                'lon': ceil(xarray_dataset.lon.max().item())
                             }
                     },
                     'temporal': {
                         'interval': {
-                            'start': xarray_dataset.time[0].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
-                            'stop': xarray_dataset.time[-1].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
+                            'start': xarray_dataset.time[0].dt.strftime('%Y-%m-01T00:00:00Z').item(),
+                            'stop': xarray_dataset.time[-1].dt.strftime('%Y-%m-31T23:59:59Z').item()
                         },
                         'resolution': 'monthly'
                     },
-                    'title': xarray_dataset.title,
+                    'title': xarray_dataset.title.replace(',', ' &'),
                     'variables': [variable for variable in xarray_dataset.data_vars if variable != 'area'],
                 },
                 'submitterId': 'CP'
