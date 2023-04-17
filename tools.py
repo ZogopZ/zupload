@@ -1,10 +1,26 @@
+import pandas
+import json
+import constants
+import tools
 from imports import *
+from icoscp.sparql.runsparql import RunSparql
+from zipfile import ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_BZIP2, ZIP_LZMA
+from zlib import Z_BEST_COMPRESSION
 
+def read_json(path: str = None, json_data: str = None):
+    """
+    Read dictionary from json file.
 
-def read_json(path=None):
-    """Read json file and load content to dictionary"""
-    with open(file=path, mode='r') as json_handle:
-        return json.load(json_handle)
+    Can also be used to check for valid json either from file or from
+    another object like a response from a request.
+    """
+    if path:
+        with open(file=path, mode='r') as json_handle:
+            json_data = json.load(json_handle)
+    else:
+        json_data = json.loads(json_data)
+    return json_data
 
 
 def write_json(path=None, content=None):
@@ -112,3 +128,325 @@ def find_files(search_string: str = None) -> list:
         if pattern.match(file_name):
             found_files.append(os.path.join(directory, file_name))
     return sorted(found_files)
+
+
+def request_rest_countries():
+    countries = requests.get('https://restcountries.com/v3.1/all')
+    with open(file='delete_1', mode='w') as json_file:
+        json.dump(countries.json(), json_file)
+    return
+
+
+# Todo: Maybe rename this function.
+def get_request(url: str = None):
+    """Send and handle a get request."""
+    response = None
+    try:
+        response = requests.get(url=url)
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        print(e)
+    else:
+        if response.status_code == 200:
+            pass
+    return response
+
+
+def exit_zupload():
+    exit('\nZupload will now exit but it does not want to.')
+    return
+
+
+def pass_me():
+    pass
+    return
+
+
+def download_collections() -> pandas.DataFrame:
+    """SPARQL query for all collections."""
+    sparql_query = (
+        '''
+            prefix cpmeta: <http://meta.icos-cp.eu/ontologies/cpmeta/>
+            prefix dcterms: <http://purl.org/dc/terms/>
+            select ?coll ?title where{
+                ?coll a cpmeta:Collection .
+                OPTIONAL{?coll cpmeta:hasDoi ?doi}
+                ?coll dcterms:title ?title .
+                FILTER NOT EXISTS {[] cpmeta:isNextVersionOf ?coll}
+                OPTIONAL{?coll cpmeta:hasCitationString ?citation}
+                OPTIONAL{?doc cpmeta:hasBiblioInfo ?bibinfo}
+                FILTER(STRSTARTS(str(?coll), "https://meta.icos-cp.eu/"))
+            }
+            order by ?title
+        '''
+    )
+    return RunSparql(sparql_query=sparql_query, output_format='pandas').run()
+
+
+def get_size(path: str = None, units='bytes') -> float:
+    """
+    Returns the size of the given path in specified units.
+
+    By-default it will return the output of os.path.getsize(), namely
+    a number of bytes for the given path.
+    """
+    size = None
+    b_size = os.path.getsize(path)
+    if units == 'bytes':
+        size = b_size
+    elif units == 'kilobytes':
+        size = b_size / (2**10)
+    elif units == 'megabytes':
+        size = b_size / (2**20)
+    elif units == 'gigabytes':
+        size = b_size / (2**30)
+    return size
+
+
+def zip_files(files: list = None, p_output_file: str = None):
+    """
+    Zip incoming file list.
+
+    It is recommended to not use any compression level or type since it
+    might slow down accessing zip archives on the data portal (Oleg's
+    suggestion).
+    Outlaws acting on their own volition may use:
+      compress_type=ZIP_DEFLATED
+        and
+      compresslevel=Z_BEST_COMPRESSION,
+    in the zip_file.write() function to produce smaller size zips.
+    """
+    files = sorted(files)
+    with ZipFile(file=p_output_file, mode='w') as zip_file:
+        total = len(files)
+        for index, file in enumerate(files):
+            archive_name = file.split('/')[-1]
+            zip_file.write(filename=file,
+                           arcname=archive_name)
+            # Pirates use this instead.
+            # zip_file.write(filename=file,
+            #                arcname=archive_name,
+            #                compress_type=ZIP_DEFLATED,
+            #                compresslevel=Z_BEST_COMPRESSION)
+            progress_bar(operation='zip_files',
+                         current=index + 1,
+                         total=total,
+                         additional_info=({
+                             'target_zip': p_output_file.split('/')[-1],
+                             'source_file': archive_name
+                         }))
+    return
+
+
+def get_hash_sum(file_path: str = None) -> str:
+    """Calculate and return hash-sum of given file."""
+    sha256_hash = hashlib.sha256()
+    with open(file=file_path, mode='rb') as file_handle:
+        total = int(os.stat(file_path).st_size)
+        current = int()
+        # Read and update hash string value in blocks of 4K
+        for byte_block in iter(lambda: file_handle.read(4096), b""):
+            sha256_hash.update(byte_block)
+            current += len(byte_block)
+            # Printing out the progress bar while calculating a
+            # hash-sum of a big file is a strenuous task; thus limit
+            # the output using multiples of 4096 and when all bytes
+            # are read.
+            if current % 65535 == 0 or current == total:
+                tools.progress_bar(
+                    operation='calculate_hash_sum', current=current,
+                    total=total,
+                    additional_info=dict({
+                        'source_file': file_path.split('/')[-1]
+                    }))
+    return sha256_hash.hexdigest()
+
+
+def get_specification(file_name: str = None) -> tuple:
+    dataset_type = None
+    dataset_object_spec = None
+    if 'persector' in file_name:
+        dataset_type = 'anthropogenic emissions per sector'
+        dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+    elif 'anthropogenic' in file_name:
+        dataset_type = 'anthropogenic emissions'
+        dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+    elif 'nep' in file_name:
+        dataset_type = 'biospheric fluxes'
+        dataset_object_spec = constants.OBJECT_SPECS['biospheric_model_results']
+    elif 'fire' in file_name:
+        dataset_type = 'fire emissions'
+        dataset_object_spec = constants.OBJECT_SPECS['file_emission_model_results']
+    elif 'ocean' in file_name:
+        dataset_type = 'ocean fluxes'
+        dataset_object_spec = constants.OBJECT_SPECS['oceanic_flux_model_results']
+    elif any(part in file_name for part in ['CSR', 'LUMIA', 'Priors']):
+        dataset_type = 'inversion modeling spatial'
+        dataset_object_spec = constants.OBJECT_SPECS['inversion_modeling_spatial']
+    elif 'zip' in file_name:
+        dataset_type = 'model data archive'
+        dataset_object_spec = constants.OBJECT_SPECS['model_data_archive']
+    return dataset_type, dataset_object_spec
+
+
+def obtain_rest_countries():
+    """Read or download rest countries information."""
+    print(f'- Obtaining rest countries information...')
+    rest_countries = None
+    continent_possession = {
+        'Africa': 'African',
+        'Americas': 'American',
+        'Antarctic': 'Antarctic',
+        'Asia': 'Asian',
+        'Eurasia': 'Eurasian',
+        'Europe': 'European',
+        'Oceania': 'Oceanian'
+    }
+    try:
+        rest_countries = tools.read_json(path=constants.P_REST_COUNTRIES)
+    except FileNotFoundError as e:
+        pass
+    finally:
+        if rest_countries:
+            print(f'\tContent read from {constants.P_REST_COUNTRIES}... '
+                  f'{constants.ICON_CHECK}')
+        # Rest countries file exists but it doesn't contain any
+        # json data.
+        else:
+            download_boxes = False
+            if input_handler(operation='download_rest_countries') == 'Y':
+                download_boxes = True
+            downloaded_rest_countries = \
+                tools.get_request(url=constants.REST_COUNTRIES).json()
+            rest_countries = dict()
+            total = len(downloaded_rest_countries)
+            for index, country in enumerate(downloaded_rest_countries):
+                country_code = country['cca2']
+                if country_code == 'GB':
+                    country_code = 'UK'
+                country_name = country['name']['common']
+                country_continent = country['region']
+                country_name_nominatim = None
+                # Svalbard and Jan is under the full sovereignty of
+                # Norway.
+                if country_code == 'SJ':
+                    country_name_nominatim = 'Norway'
+                #
+                elif country_code == 'GF':
+                    country_name_nominatim = 'France'
+                elif country_code == 'RU':
+                    country_name_nominatim = country_name
+                    country_continent = 'Eurasia'
+                else:
+                    country_name_nominatim = country_name
+                bounding_box = []
+                if download_boxes:
+                    # Request country's bounding box from nominatim.
+                    # This can be empty.
+                    box_url = (
+                        'https://nominatim.openstreetmap.org/search?'
+                        f'country={country_name_nominatim}'
+                        f'&format=json&polygon=0'
+                    )
+                    country_coordinates = tools.get_request(box_url).json()
+                    bounding_box = country_coordinates[0]['boundingbox'] \
+                        if country_coordinates else []
+                # Fill in the countries' dictionary with country name,
+                # country continent, country's bounding box (if
+                # available.) The dictionary will have as keys the
+                # cca2 countries' codes.
+                rest_countries.setdefault(
+                    country_code,
+                    {
+                        'name': country_name,
+                        'continent': country_continent,
+                        'continent_possession':
+                            continent_possession[country_continent],
+                        'bounding_box_from': country_name_nominatim,
+                        'min_lat':
+                            float(bounding_box[0]) if bounding_box
+                            else None,
+                        'max_lat':
+                            float(bounding_box[1]) if bounding_box
+                            else None,
+                        'min_lon':
+                            float(bounding_box[2]) if bounding_box
+                            else None,
+                        'max_lon':
+                            float(bounding_box[3]) if bounding_box
+                            else None
+                    })
+                progress_bar(operation='download_rest_countries',
+                             current=index+1,
+                             total=total)
+            tools.write_json(path=constants.P_REST_COUNTRIES,
+                             content=rest_countries)
+            print(f'{constants.ICON_CHECK}', flush=True)
+    return rest_countries
+
+
+def progress_bar(operation: str = None, current: int = None,
+                 total: int = None, bar_length: int = 20,
+                 additional_info: dict = None):
+    """
+    Outputs a loading-like bar for various operations.
+
+    Credits to: https://stackoverflow.com/a/37630397
+    """
+    prepender = str()
+    if operation == 'download_rest_countries':
+        prepender = (
+            f'\tDownloading rest countries from '
+            f'{constants.REST_COUNTRIES}:'
+        )
+    elif operation == 'zip_files':
+        prepender = (
+            f'\tZipping  |{additional_info["source_file"]}|  to  '
+            f'|{additional_info["target_zip"]}|'
+        )
+    elif operation == 'calculate_hash_sum':
+        prepender = (
+            f'\tCalculating hash sum of {additional_info["source_file"]}'
+        )
+    elif operation == 'archive_meta_data':
+        prepender = f'- Archiving meta-data'
+    elif operation == 'try_ingest':
+        prepender = (
+            f'\tTrying ingestion of data files (This might take a while.)'
+        )
+    elif operation == 'upload_meta_data':
+        prepender = '- Uploading meta-data'
+    elif operation == 'upload_data':
+        prepender = '- Uploading data'
+    fraction = current / total
+    arrow = int(fraction * bar_length - 1) * '-' + '>'
+    padding = int(bar_length - len(arrow)) * ' '
+    ending = f' {constants.ICON_CHECK}\n' if current == total else '\r'
+    progress = str(
+        f'{prepender} [{arrow}{padding}] {int(fraction*100)}%'
+    )
+    print(200*' ', end='\r', flush=True)
+    print(progress, end=ending, flush=True)
+    return
+
+
+def input_handler(operation: str = None, additional_info: dict = None) -> str:
+    input_prepender = str()
+    if operation == 'download_rest_countries':
+        input_prepender = (
+            '\tWe download bounding boxes from nominatim. According to\n'
+            '\tnominatim\'s usage policy there is an absolute maximum of 1\n'
+            '\trequest per second; Thus this operation will take about 3-4\n'
+            '\tto complete.\n'
+            '\tWould you like to also download bounding boxes? (Y,n): '
+        )
+    elif operation == 'try_ingest':
+        input_prepender = '\tPlease select number of subprocesses: '
+    elif operation == 'store_current_archive':
+        input_prepender = (
+            '\tBe careful!!! You are trying to overwrite an already existing '
+            f'{additional_info["archive"]}\n'
+            f'\tAre you sure you want to continue? (Y/n): '
+        )
+    user_input = input(input_prepender)
+    return user_input

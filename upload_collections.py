@@ -171,24 +171,6 @@ def extract_yearly_collections(monthly_collections=None):
     return
 
 
-def download_collections() -> pandas.DataFrame:
-    """SPARQL query for all collections."""
-    sparql_query = '''
-    prefix cpmeta: <http://meta.icos-cp.eu/ontologies/cpmeta/>
-    prefix dcterms: <http://purl.org/dc/terms/>
-    select ?coll ?title where{
-    	?coll a cpmeta:Collection .
-    	OPTIONAL{?coll cpmeta:hasDoi ?doi}
-    	?coll dcterms:title ?title .
-    	FILTER NOT EXISTS {[] cpmeta:isNextVersionOf ?coll}
-    	OPTIONAL{?coll cpmeta:hasCitationString ?citation}
-    	OPTIONAL{?doc cpmeta:hasBiblioInfo ?bibinfo}
-    	FILTER(STRSTARTS(str(?coll), "https://meta.icos-cp.eu/"))
-    }
-    order by ?title
-    '''
-    return RunSparql(sparql_query=sparql_query, output_format='pandas').run()
-
 
 def extract_cte_hr_collections(df_collections: pandas.DataFrame = None):
     """Extract cte-hr collections to files."""
@@ -219,7 +201,7 @@ def extract_cte_hr_collections(df_collections: pandas.DataFrame = None):
 
 
 if __name__ == '__main__':
-    extract_cte_hr_collections(download_collections())
+    extract_cte_hr_collections(tools.download_collections())
     archive_in = tools.read_json(path='input-files/in-out-archives/archive_in_cte_hr.json')
 
     # Construct and upload monthly collections.

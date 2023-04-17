@@ -22,6 +22,7 @@ import tools
 class OneTimeDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
         super().__init__(reason, interactive)
+        return
 
     def archive_files(self):
         """Archive file paths, names, and other information if needed."""
