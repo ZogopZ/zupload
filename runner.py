@@ -1,8 +1,9 @@
 import sys
 import tools
-import lpj_guess_dataset
 import cte_hr_dataset
+import lpj_guess_dataset
 import one_time_dataset
+import remote_sensing_dataset
 
 if __name__ == '__main__':
     if len(sys.argv) == 2:
@@ -17,15 +18,27 @@ if __name__ == '__main__':
         # Bit handler 7: overwrite archive in.
         #              1234567
         static_mode = '1111111'
+        static_mode = '1101100'
         skipping_handlers = tools.parse_arguments(static_mode)
     # LPJ-GUESS
-    # my_class = lpj_guess_dataset.LpjGuessDataset(reason='lpj_guess_global').one_shot(skipping_handlers)
+    # my_class = lpj_guess_dataset.LpjGuessDataset(
+    #     reason='lpj_guess_global').one_shot(skipping_handlers)
 
     # CTE-HR
-    # my_class = cte_hr_dataset.CteHrDataset(reason='cte_hr').one_shot(skipping_handlers)
+    # my_class = cte_hr_dataset.CteHrDataset(
+    #     reason='cte_hr').one_shot(skipping_handlers)
+
+    # REMOTE-SENSING MODIS
+    # my_class = remote_sensing_dataset.RemoteSensingDataset(
+    #     reason='modis').one_shot(skipping_handlers)
+
+    # REMOTE-SENSING Landsat
+    my_class = remote_sensing_dataset.RemoteSensingDataset(
+        reason='landsat').one_shot(skipping_handlers)
 
     # ONE-TIME
-    my_class = one_time_dataset.OneTimeDataset(reason='one_time').one_shot(skipping_handlers)
+    # my_class = one_time_dataset.OneTimeDataset(
+    #     reason='one_time').one_shot(skipping_handlers)
 
 
     # skipping_handlers = tools.parse_arguments(sys.argv[1])
