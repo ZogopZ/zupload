@@ -1,12 +1,23 @@
-import pandas
+# Format read from https://peps.python.org/pep-0008/#imports.
+# Standard library imports.
+from getpass import getpass
+import collections
+import hashlib
 import json
-import constants
-import tools
-from imports import *
+import os
+import pandas
+import pickle
+import re
+
+
+# Related third party imports.
+import requests
 from icoscp.sparql.runsparql import RunSparql
-from zipfile import ZipFile
-from zipfile import ZIP_DEFLATED, ZIP_BZIP2, ZIP_LZMA
-from zlib import Z_BEST_COMPRESSION
+
+# Local application/library specific imports.
+import constants
+import exiter
+
 
 def read_json(path: str = None, json_data: str = None):
     """
@@ -43,21 +54,16 @@ def regenerate_full_archive(components_dir=None):
 
 def check_permissions():
     valid_cookie = False
-    print(f'- {constants.ICON_COOKIE:2}Authenticating user...')
+    print(f'- Authenticating user.')
     while not valid_cookie:
         if os.path.exists(constants.COOKIES) and validate_cookie():
             valid_cookie = True
         elif os.path.exists(constants.COOKIES) and not validate_cookie():
-            user_input = input(
-                f'\tFile {constants.COOKIES} exists in the current working directory but it is outdated:\n'
-                f'\t- Continue with current cookie {constants.ICON_ARROW} c\n'
-                f'\t- Regenerate cookie {constants.ICON_ARROW} r\n'
-                f'\t- Exit zbunchpload {constants.ICON_ARROW} e\n'
-                f'\tPlease enter a selection (r/e): ')
+            user_input = input_handler(operation='authenticate')
             if user_input == 'r':
                 valid_cookie = True if curl_cookie() else False
             elif user_input == 'e':
-                exit(f'\tzbunchpload will now exit.')
+                exiter.exit_zupload(reason='Unwillingness to authenticate')
         else:
             valid_cookie = curl_cookie()
     return
@@ -81,11 +87,11 @@ def curl_cookie():
 def validate_cookie():
     """Validate existing cookie."""
     validation = False
-    url = 'https://cpauth.icos-cp.eu/whoami'
-    cookie_validation_response = requests.get('https://cpauth.icos-cp.eu/whoami', cookies=load_cookie())
+    cookie_validation_response = requests.get(constants.WHO_AM_I,
+                                              cookies=load_cookie())
     if cookie_validation_response.status_code == 200:
         validation = True
-        print(f'\t{constants.ICON_ARROW_DOWN_RIGHT} {constants.ICON_BABY} Hello '
+        print(f'\t{constants.ICON_ARROW_DOWN_RIGHT} Hello '
               f'{cookie_validation_response.json()["email"]}!')
     return validation
 
@@ -110,10 +116,12 @@ def parse_arguments(mode: str = None) -> dict:
         'upload_data': True,
         'store_current_archive': True
     })
-    print(f'- {constants.ICON_GEAR:3}Mode parsing ({mode})...')
+    print(f'- Mode parsing ({mode}).')
     for handler, handler_items in zip(mode, skipping_handlers.items()):
         boolean_handler = bool(int(handler))
-        print(f'\t{" ".join(handler_items[0].split("_")):21} =  {boolean_handler}')
+        print(
+            f'\t{" ".join(handler_items[0].split("_")):21} =  '
+            f'{boolean_handler}')
         skipping_handlers[handler_items[0]] = bool(int(handler))
     return skipping_handlers
 
@@ -150,11 +158,6 @@ def get_request(url: str = None):
         if response.status_code == 200:
             pass
     return response
-
-
-def exit_zupload():
-    exit('\nZupload will now exit but it does not want to.')
-    return
 
 
 def pass_me():
@@ -238,7 +241,7 @@ def zip_files(files: list = None, p_output_file: str = None):
     return
 
 
-def get_hash_sum(file_path: str = None) -> str:
+def  get_hash_sum(file_path: str = None, progress: bool = True) -> str:
     """Calculate and return hash-sum of given file."""
     sha256_hash = hashlib.sha256()
     with open(file=file_path, mode='rb') as file_handle:
@@ -252,8 +255,8 @@ def get_hash_sum(file_path: str = None) -> str:
             # hash-sum of a big file is a strenuous task; thus limit
             # the output using multiples of 4096 and when all bytes
             # are read.
-            if current % 65535 == 0 or current == total:
-                tools.progress_bar(
+            if (current % 65535 == 0 or current == total) and progress:
+                progress_bar(
                     operation='calculate_hash_sum', current=current,
                     total=total,
                     additional_info=dict({
@@ -394,7 +397,11 @@ def progress_bar(operation: str = None, current: int = None,
     Credits to: https://stackoverflow.com/a/37630397
     """
     prepender = str()
-    if operation == 'download_rest_countries':
+    if operation == 'archive_system_info':
+        prepender = (
+            f'\tArchiving {additional_info["file_name"]}'
+        )
+    elif operation == 'download_rest_countries':
         prepender = (
             f'\tDownloading rest countries from '
             f'{constants.REST_COUNTRIES}:'
@@ -409,19 +416,29 @@ def progress_bar(operation: str = None, current: int = None,
             f'\tCalculating hash sum of {additional_info["source_file"]}'
         )
     elif operation == 'archive_meta_data':
-        prepender = f'- Archiving meta-data'
+        prepender = (
+            f'\tArchiving meta-data for file {additional_info["file_name"]}'
+        )
     elif operation == 'try_ingest':
         prepender = (
-            f'\tTrying ingestion of data files (This might take a while.)'
+            f'\tTried ingestion of file: {additional_info["file_name"]}'
         )
     elif operation == 'upload_meta_data':
-        prepender = '- Uploading meta-data'
+        prepender = (
+            f'\tUploaded meta-data for file: {additional_info["file_name"]}'
+        )
     elif operation == 'upload_data':
-        prepender = '- Uploading data'
+        prepender = (
+            f'\tUploaded data for file: {additional_info["file_name"]}'
+        )
     fraction = current / total
     arrow = int(fraction * bar_length - 1) * '-' + '>'
     padding = int(bar_length - len(arrow)) * ' '
-    ending = f' {constants.ICON_CHECK}\n' if current == total else '\r'
+    if current == total:
+        prepender = '\tCompletion'
+        ending = f' {constants.ICON_CHECK}\n'
+    else:
+        ending = '\r'
     progress = str(
         f'{prepender} [{arrow}{padding}] {int(fraction*100)}%'
     )
@@ -448,5 +465,13 @@ def input_handler(operation: str = None, additional_info: dict = None) -> str:
             f'{additional_info["archive"]}\n'
             f'\tAre you sure you want to continue? (Y/n): '
         )
+    elif operation == 'authenticate':
+        input_prepender = (
+            f'\tFile {constants.COOKIES} exists in the current working '
+            f'directory but it is outdated:\n'
+            f'\t  - Continue with current cookie {constants.ICON_ARROW} c\n'
+            f'\t  - Regenerate cookie {constants.ICON_ARROW} r\n'
+            f'\t  - Exit zupload {constants.ICON_ARROW} e\n'
+            f'\t Please enter a selection (c/r/e): ')
     user_input = input(input_prepender)
     return user_input
