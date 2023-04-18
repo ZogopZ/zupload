@@ -23,8 +23,11 @@ def extract_monthly_collections(archive=None):
         monthly_collections[reconstructed_key]['members'].setdefault(component, monthly_component['file_metadata_url'])
     # Archive meta-data for each collection.
     current_monthly_collections = tools.read_json('monthly_collections.json')
-    json_collection_files = 'input-files/cte-hr/'
+    json_collection_files = 'input-files/json-standalone-collection-files'
+    collections_to_upload = 0
     for collection_key, collection_info in monthly_collections.items():
+        if collection_key not in current_monthly_collections.keys():
+            collections_to_upload += 1
         year, month = collection_key[0:4], collection_key[4:6]
         sorted_members = list(collection_info['members'][key] for key in sorted(collection_info['members'].keys()))
         collection_info['sorted_members'] = sorted_members
@@ -76,9 +79,11 @@ def extract_monthly_collections(archive=None):
         collection_info['json_file_path'] = json_file_path
         tools.write_json(path=json_file_path, content=collection_info['json'])
     print(f'- {constants.ICON_GEAR:3}Uploading monthly collections... '
-          f'(Expecting {len(monthly_collections.items())} checks)... ')
+          f'(Expecting {collections_to_upload} checks)... ')
     url = 'https://meta.icos-cp.eu/upload'
     for collection_key, collection_info in monthly_collections.items():
+        if collection_key in current_monthly_collections.keys():
+            continue
         data = open(file=collection_info['json_file_path'], mode='rb')
         cookies = tools.load_cookie()
         headers = {'Content-Type': 'application/json'}
@@ -95,16 +100,22 @@ def extract_monthly_collections(archive=None):
 
 
 def extract_yearly_collections(monthly_collections=None):
+    pprint(monthly_collections)
+    return
     # Read SPARQLed yearly collections.
     current_yearly_collections = tools.read_json('yearly_collections.json')
-    json_collection_files = 'input-files/cte-hr/'
+    json_collection_files = 'input-files/json-standalone-collection-files'
     # Collect members for a yearly collection.
     yearly_collections = dict()
     for monthly_key, collection_content in monthly_collections.items():
         year = monthly_key[0:4]
+        if year in current_yearly_collections.keys():
+            pass
         month = monthly_key[4:]
         yearly_collections.setdefault(year, dict({'json': dict(), 'members': list(), 'versions': list()}))
         yearly_collections[year]['members'].append(collection_content["versions"][-1])
+        pprint(yearly_collections)
+    return
     for yearly_key, yearly_collection_content in yearly_collections.items():
         yearly_collection_content['versions'] = [] if yearly_key not in current_yearly_collections.keys() \
             else [current_yearly_collections[yearly_key].rsplit('/')[-1]]
@@ -171,6 +182,24 @@ def extract_yearly_collections(monthly_collections=None):
     return
 
 
+def download_collections() -> pandas.DataFrame:
+    """SPARQL query for all collections."""
+    sparql_query = '''
+    prefix cpmeta: <http://meta.icos-cp.eu/ontologies/cpmeta/>
+    prefix dcterms: <http://purl.org/dc/terms/>
+    select ?coll ?title where{
+    	?coll a cpmeta:Collection .
+    	OPTIONAL{?coll cpmeta:hasDoi ?doi}
+    	?coll dcterms:title ?title .
+    	FILTER NOT EXISTS {[] cpmeta:isNextVersionOf ?coll}
+    	OPTIONAL{?coll cpmeta:hasCitationString ?citation}
+    	OPTIONAL{?doc cpmeta:hasBiblioInfo ?bibinfo}
+    	FILTER(STRSTARTS(str(?coll), "https://meta.icos-cp.eu/"))
+    }
+    order by ?title
+    '''
+    return RunSparql(sparql_query=sparql_query, output_format='pandas').run()
+
 
 def extract_cte_hr_collections(df_collections: pandas.DataFrame = None):
     """Extract cte-hr collections to files."""
@@ -201,17 +230,36 @@ def extract_cte_hr_collections(df_collections: pandas.DataFrame = None):
 
 
 if __name__ == '__main__':
-    extract_cte_hr_collections(tools.download_collections())
+    # Download all collections and extract the cte-hr collections.
+    extract_cte_hr_collections(download_collections())
     archive_in = tools.read_json(path='input-files/cte-hr/in-out-archives/cte_hr.json')
 
     # Construct and upload monthly collections.
     extract_monthly_collections(archive=archive_in)
 
+    # You just uploaded a new monthly collection of 5 components.
+    # REST BY HAND
+    ### 1.
+    # a. Upload a new yearly version that also includes the
+    # aforementioned newly uploaded monthly collection if it belongs
+    # to the same year.
+    # or
+    # b. Upload a new yearly collection that includes the aforementioned
+    # newly uploaded monthly collection.
+    ### 2. https://doi.org/10.18160/20Z1-AYJ2
+    # a. Upload a new version for the aforementioned DOI. The last
+    # yearly collection of the DOI must be updated to its new version.
+    # or
+    # b. Upload a new version for the aforementioned DOI. Add the new
+    # yearly collection to the list of collections.
+    ### 3. https://doi.org/10.18160/20Z1-AYJ2
+    # Update the Target URL in the doi app to the latest version of the full collection.
+
     # Read monthly collections from json file generated by
     # extract_monthly_collections() function.
-    monthly_collections = tools.read_json(path='zois.json')
+    # monthly_collections = tools.read_json(path='zois.json')
     # Construct and upload yearly collections.
-    extract_yearly_collections(monthly_collections)
+    # extract_yearly_collections(monthly_collections)
 
 
     # archive_json_curl()
