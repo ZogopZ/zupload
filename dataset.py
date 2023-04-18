@@ -12,10 +12,11 @@ import humanize
 import requests
 
 # Local application/library specific imports.
-import constants
+# import cte_hr_dataset
 # import dataset
 # import lpj_guess_dataset
-# import cte_hr_dataset
+import constants
+import exiter
 import tools
 
 
@@ -62,7 +63,7 @@ class Dataset:
             if input_content is None:
                 # todo: Maybe make this part interactive using the self.interactive class attribute.
                 # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-                search_string = 'input-files/data-files/landsat/files/.*.nc'
+                search_string = 'input-files/data-files/ctehires/.*.nc'
                 found_files = sorted(tools.find_files(search_string=search_string))
             else:
                 found_files = sorted(input_content)
@@ -216,7 +217,7 @@ class Dataset:
         # Todo: Fix the way try_ingest() outputs stuff.
         # Get number of try-ingest subprocesses from user input.
         # Setting this to more than 1 sometimes might not work.
-        print(f'- Trying ingestion of files...')
+        print(f'- Trying ingestion of files (This might take a while.)')
         subprocesses = int(tools.input_handler(operation='try_ingest'))
         checks = 0
         command_list = list()
@@ -244,15 +245,12 @@ class Dataset:
                 pool_results = pool.map(self.execute_item, item_list)
                 for pool_result in pool_results:
                     if pool_result['status_code'] != 200:
-                        exit(f'\n\tTry Ingest Error! {pool_result}.\n'
-                             f'\tZbunchpload will now exit.')
+                        exiter.exit_zupload(reason='Try ingest error')
                     else:
                         checks += 1
                         tools.progress_bar(operation='try_ingest',
                                            current=checks, total=total,
-                                           additional_info=dict({
-                                               'text': pool_result
-                                           }))
+                                           additional_info=pool_result)
                 results.extend(pool_results)
         # Uncomment these lines to print the results of the try-ingest.
         # print('')
@@ -267,8 +265,10 @@ class Dataset:
             data=open(file=try_ingest_components['file_path'], mode='rb'),
             params=try_ingest_components['params']
         )
+        file_name = try_ingest_components['file_path'].split('/')[-1]
         return {'status_code': try_ingest_response.status_code,
-                'text': try_ingest_response.text}
+                'text': try_ingest_response.text,
+                'file_name': file_name}
 
     def re_ingest(self):
         for base_key, base_info in self.archive_out.items():
@@ -283,32 +283,32 @@ class Dataset:
         return
 
     def upload_metadata(self):
+        print('- Uploading meta-data.')
         total = len(self.archive_out)
         for index, (base_key, base_info) in \
                 enumerate(self.archive_out.items()):
+            if base_info['handlers']['upload_metadata']:
+                data = open(file=base_info['json_file_path'], mode='rb')
+                cookies = tools.load_cookie()
+                headers = {'Content-Type': 'application/json'}
+                upload_metadata_response = requests.post(
+                    url=constants.META_DATA_UPLOAD_URL,
+                    data=data,
+                    headers=headers,
+                    cookies=cookies
+                )
+                if upload_metadata_response.status_code == 200:
+                    file_data_url = upload_metadata_response.text
+                    base_info['file_data_url'] = file_data_url
+                    base_info['file_metadata_url'] = \
+                        file_data_url.replace('data', 'meta')
+                else:
+                    exit(f'{upload_metadata_response.text},'
+                         f'{upload_metadata_response.status_code}')
+                    # todo: Implement exit in case of incorrect upload of
+                    #  meta-data.
             tools.progress_bar(operation='upload_meta_data', current=index+1,
                                total=total)
-            if not base_info['handlers']['upload_metadata']:
-                continue
-            data = open(file=base_info['json_file_path'], mode='rb')
-            cookies = tools.load_cookie()
-            headers = {'Content-Type': 'application/json'}
-            upload_metadata_response = requests.post(
-                url=constants.META_DATA_UPLOAD_URL,
-                data=data,
-                headers=headers,
-                cookies=cookies
-            )
-            if upload_metadata_response.status_code == 200:
-                file_data_url = upload_metadata_response.text
-                base_info['file_data_url'] = file_data_url
-                base_info['file_metadata_url'] = \
-                    file_data_url.replace('data', 'meta')
-            else:
-                exit(f'{upload_metadata_response.text},'
-                     f'{upload_metadata_response.status_code}')
-                # todo: Implement exit in case of incorrect upload of
-                #  meta-data.
         self.store_current_archive()
         return
 
@@ -341,17 +341,25 @@ class Dataset:
         return
 
     def printer(self):
-        print(f'- {constants.ICON_RECEIPT:3}Here\'s your meta-data:')
+        print(f'- Here\'s your meta-data:')
         # Used to align user output since keys can vary in length.
         base_key_max_length = len(max(self.archive_out.keys(), key=len))
         for base_key, base_info in self.archive_out.items():
             if base_info['file_path'] not in self.input_data:
                 continue
             if 'file_metadata_url' in base_info.keys():
-                print(f'\t{base_key:{base_key_max_length}} {base_info["file_metadata_url"]}')
+                print(f'\t{base_key:{base_key_max_length}} '
+                      f'{base_info["file_metadata_url"]}')
             else:
-                print(f'\t{base_key:{base_key_max_length}} No info for file meta-data url')
+                print(f'\t{base_key:{base_key_max_length}} '
+                      f'No info for file meta-data url')
         print(f'\tTotal of {len(self.input_data)} items.')
+        return
+
+    def archive_files(self):
+        return
+
+    def archive_json(self):
         return
 
     # todo: implement mode mode for the one_shot handler.
@@ -360,18 +368,18 @@ class Dataset:
         if handlers is None:
             handlers = {}
         self.archive_files() if handlers['archive_files'] \
-            else print(f'- {constants.ICON_HOLE:3}Skipping archiving of files...')
+            else print(f'- Skipping archiving of files.')
         # self.fill_handlers() if handlers['fill_handlers'] \
         #     else print(f'- {constants.ICON_HOLE:3}Skipping handler filling...')
         self.try_ingest() if handlers['try_ingest'] \
-            else print(f'- {constants.ICON_HOLE:3}Skipping try ingestion of files...')
+            else print(f'- Skipping try ingestion of files.')
         self.archive_json() if handlers['archive_json'] \
-            else print(f'- {constants.ICON_HOLE:3}Skipping archiving of json...')
+            else print(f'- Skipping archiving of json.')
         tools.check_permissions()
         self.upload_metadata() if handlers['upload_metadata'] \
-            else print(f'- {constants.ICON_HOLE:3}Skipping uploading of meta-data...')
+            else print(f'- Skipping uploading of meta-data.')
         self.upload_data() if handlers['upload_data'] \
-            else print(f'- {constants.ICON_HOLE:3}Skipping uploading of data...')
+            else print(f'- Skipping uploading of data.')
         self.store_current_archive() if handlers['store_current_archive'] \
-            else print(f'- {constants.ICON_HOLE:3}Skipping storing of archive...')
+            else print(f'- Skipping storing of archive.')
         self.printer()

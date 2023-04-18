@@ -29,13 +29,23 @@ OBJECT_SPECS = {
 REST_COUNTRIES = 'https://restcountries.com/v3.1/all'
 P_REST_COUNTRIES = 'input-files/rest_countries.json'
 # People
-SOPHIA_WALTHER = 'http://meta.icos-cp.eu/resources/people/Sophia_Walther'
+AUKE_WOUDE = 'http://meta.icos-cp.eu/resources/people/Auke_van_der_Woude'
+INGRID_LUIJKX = \
+    'http://meta.icos-cp.eu/resources/people/Ingrid_van%20der%20Laan-Luijkx'
 JACOB_NELSON = 'http://meta.icos-cp.eu/resources/people/Jacob_Nelson'
+NAOMI_SMITH = 'http://meta.icos-cp.eu/resources/people/Naomi_Smith'
+REMCO_DE_KOK = 'http://meta.icos-cp.eu/resources/people/Remco_de_Kok'
 SIMON_BESNARD = 'http://meta.icos-cp.eu/resources/people/Simon_Besnard'
+SOPHIA_WALTHER = 'http://meta.icos-cp.eu/resources/people/Sophia_Walther'
 ULRICH_WEBER = 'http://meta.icos-cp.eu/resources/people/Ulrich_Weber'
+WOUTER_PETERS = 'http://meta.icos-cp.eu/resources/people/Wouter_Peters'
 # Organizations
 MPI_BGC = 'http://meta.icos-cp.eu/resources/organizations/MPI-BGC'
+WUR = 'http://meta.icos-cp.eu/resources/organizations/WUR'
 # Licenses
 ICOS_LICENSE = 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence'
-# Meta-data upload url
+# URLS
 META_DATA_UPLOAD_URL = 'https://meta.icos-cp.eu/upload'
+WHO_AM_I = 'https://cpauth.icos-cp.eu/whoami'
+# Latitude, longitude boxes
+CTE_HR_BOX = 'http://meta.icos-cp.eu/resources/latlonboxes/ctehrEuropeLatLonBox'

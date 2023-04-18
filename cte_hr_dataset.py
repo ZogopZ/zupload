@@ -16,24 +16,24 @@ import xarray
 # Local application/library specific imports.
 import constants
 import dataset
+import exiter
 import tools
 
 
 class CteHrDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
-        self.input_data = None
         super().__init__(reason, interactive)
 
     def archive_files(self):
         """Archive file paths, names, and other information if needed."""
-        print(f'- {constants.ICON_GEAR:3}Archiving system information of `.{self.file_type}` files... ', end='')
-        for file_path in self.input_data:
+        print('- Archiving system information.')
+        total = len(self.input_data)
+        for index, file_path in enumerate(self.input_data):
             file_name = file_path.split('/')[-1]
             general_date = re.findall(r'\d{6}', file_name)
             if len(general_date) != 1:
-                exit(f'\tError! Incorrect 6-digit date values: {general_date} where spotted in file: {file_name}.\n'
-                     f'\tNeed to have only one 6-digit date value specified in file\'s name.\n'
-                     f'\tZbunchpload will now exit.')
+                exiter.exit_zupload(info=dict({'file_name': file_name,
+                                               'general_date': general_date}))
             year = general_date[0][0:4]
             month = general_date[0][4:6]
             dataset_type, dataset_object_spec = self.get_file_info(file_name)
@@ -45,17 +45,25 @@ class CteHrDataset(dataset.Dataset):
                 'dataset_object_spec': dataset_object_spec,
                 'month': month,
                 'year': year,
-                'try_ingest_components': self.build_try_ingest_components(file_path=file_path,
-                                                                          dataset_object_spec=dataset_object_spec),
+                'try_ingest_components':
+                    self.build_try_ingest_components(
+                        file_path=file_path,
+                        dataset_object_spec=dataset_object_spec
+                    ),
             })
             self.archive_out[base_key].setdefault('handlers', dict({'archive_json': True,
                                                                     'try_ingest': True,
                                                                     'upload_metadata': True,
                                                                     'upload_data': True}))
             self.archive_out[base_key].setdefault('versions', [])
+            tools.progress_bar(
+                operation='archive_system_info',
+                current=index + 1, total=total,
+                additional_info=dict({'file_name': file_name})
+            )
         # Sort archive's items.
         self.archive_out = dict(sorted(self.archive_out.items()))
-        print(constants.ICON_CHECK)
+        self.store_current_archive()
         return
 
     def build_try_ingest_components(self, file_path: str = None, dataset_object_spec: str = None) -> dict:
@@ -110,33 +118,46 @@ class CteHrDataset(dataset.Dataset):
         `store_current_archive()` at the end of the script.
 
         """
-        print(f'- {constants.ICON_GEAR:3}Archiving meta-data... ', end='', flush=True)
-        for base_key, base_info in self.archive_out.items():
+        print('- Archiving meta-data (Includes hash-sum calculation.)')
+        total = len(self.archive_out)
+        for index, (base_key, base_info) in \
+                enumerate(self.archive_out.items()):
+            tools.progress_bar(operation='archive_meta_data',
+                               current=index+1,
+                               total=total,
+                               additional_info=dict({
+                                   'file_name': base_info['file_name']
+                               }))
             if not base_info['handlers']['upload_metadata']:
                 continue
             xarray_dataset = xarray.open_dataset(base_info['file_path'])
-            creation_date = datetime.strptime(xarray_dataset.creation_date, '%Y-%m-%d %H:%M')
+            creation_date = datetime.strptime(xarray_dataset.creation_date,
+                                              '%Y-%m-%d %H:%M')
             base_info['json'] = dict({
                 'fileName': base_info['file_name'],
-                'hashSum': self.get_hash_sum(file_path=base_info['file_path']),
-                'isNextVersionOf': [] if not base_info['versions'] else base_info['versions'][-1].rsplit('/')[-1],
+                'hashSum':
+                    tools.get_hash_sum(file_path=base_info['file_path'],
+                                       progress=False),
+                'isNextVersionOf': [] if not base_info['versions'] else
+                base_info['versions'][-1].rsplit('/')[-1],
                 'objectSpecification': base_info['dataset_object_spec'],
                 'references': {
                     'keywords': ['carbon flux'],
-                    'licence': 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence'
+                    'licence': constants.ICOS_LICENSE
                 },
                 'specificInfo': {
                     'description': xarray_dataset.comment,
                     'production': {
                         'contributors': [
-                            'http://meta.icos-cp.eu/resources/people/Ingrid_van%20der%20Laan-Luijkx',
-                            'http://meta.icos-cp.eu/resources/people/Naomi_Smith',
-                            'http://meta.icos-cp.eu/resources/people/Remco_de_Kok',
-                            'http://meta.icos-cp.eu/resources/people/Wouter_Peters'
+                            constants.INGRID_LUIJKX,
+                            constants.NAOMI_SMITH,
+                            constants.REMCO_DE_KOK,
+                            constants.WOUTER_PETERS
                         ],
-                        'creationDate': creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                        'creator': 'http://meta.icos-cp.eu/resources/people/Auke_van_der_Woude',
-                        'hostOrganization': 'http://meta.icos-cp.eu/resources/organizations/WUR',
+                        'creationDate':
+                            creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'creator': constants.AUKE_WOUDE,
+                        'hostOrganization': constants.WUR,
                         # Comment used for correct versions of
                         # anthropogenic & anthropogenic per sector
                         # files.
@@ -146,25 +167,33 @@ class CteHrDataset(dataset.Dataset):
                         #            'profiles.',
                         'sources': [],
                     },
-                    'spatial': 'http://meta.icos-cp.eu/resources/latlonboxes/ctehrEuropeLatLonBox',
+                    'spatial': constants.CTE_HR_BOX,
                     'temporal': {
                         'interval': {
-                            'start': xarray_dataset.time[0].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
-                            'stop': xarray_dataset.time[-1].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
+                            'start': xarray_dataset.time[0].dt.strftime(
+                                '%Y-%m-%dT%H:%M:%SZ').item(),
+                            'stop': xarray_dataset.time[-1].dt.strftime(
+                                '%Y-%m-%dT%H:%M:%SZ').item(),
                         },
                         'resolution': 'hourly'
                     },
-                    'title': f'High-resolution, near-real-time fluxes over Europe '
-                             f'from CTE-HR: {base_info["dataset_type"]} '
-                             f'{base_info["year"]}-{base_info["month"]}',
-                    'variables': [variable for variable in xarray_dataset.data_vars],
+                    'title': (
+                        f'High-resolution, near-real-time fluxes over Europe '
+                        f'from CTE-HR: {base_info["dataset_type"]} '
+                        f'{base_info["year"]}-{base_info["month"]}'
+                    ),
+                    'variables':
+                        [variable for variable in xarray_dataset.data_vars],
                 },
                 'submitterId': 'CP'
             })
-            json_file_name = base_key + '.json'
-            json_file_path = os.path.join(self.json_standalone_files, json_file_name)
+            json_file_name = f'{base_key}.json'
+            json_file_path = os.path.join(self.json_standalone_files,
+                                          json_file_name)
             base_info['json_file_path'] = json_file_path
             tools.write_json(path=json_file_path, content=base_info['json'])
-        print(constants.ICON_CHECK, flush=True)
+        # Sort archive's items.
+        self.archive_out = dict(sorted(self.archive_out.items()))
+        self.store_current_archive()
         return
 
