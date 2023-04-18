@@ -116,10 +116,12 @@ def parse_arguments(mode: str = None) -> dict:
         'upload_data': True,
         'store_current_archive': True
     })
-    print(f'- {constants.ICON_GEAR:3}Mode parsing ({mode})...')
+    print(f'- Mode parsing ({mode}).')
     for handler, handler_items in zip(mode, skipping_handlers.items()):
         boolean_handler = bool(int(handler))
-        print(f'\t{" ".join(handler_items[0].split("_")):21} =  {boolean_handler}')
+        print(
+            f'\t{" ".join(handler_items[0].split("_")):21} =  '
+            f'{boolean_handler}')
         skipping_handlers[handler_items[0]] = bool(int(handler))
     return skipping_handlers
 
@@ -419,12 +421,16 @@ def progress_bar(operation: str = None, current: int = None,
         )
     elif operation == 'try_ingest':
         prepender = (
-            f'\tTrying ingestion of file: {additional_info["file_name"]}'
+            f'\tTried ingestion of file: {additional_info["file_name"]}'
         )
     elif operation == 'upload_meta_data':
-        prepender = '- Uploading meta-data'
+        prepender = (
+            f'\tUploaded meta-data for file: {additional_info["file_name"]}'
+        )
     elif operation == 'upload_data':
-        prepender = '- Uploading data'
+        prepender = (
+            f'\tUploaded data for file: {additional_info["file_name"]}'
+        )
     fraction = current / total
     arrow = int(fraction * bar_length - 1) * '-' + '>'
     padding = int(bar_length - len(arrow)) * ' '

@@ -56,7 +56,7 @@ class Dataset:
 
     @input_data.setter
     def input_data(self, input_content=None):
-        print(f'- {constants.ICON_DATA:3}Obtaining data files...')
+        print(f'- Obtaining data files.')
         found_files = list()
         file_listing = list()
         while True:
@@ -130,7 +130,7 @@ class Dataset:
                               f'empty. Converting it to json... {constants.ICON_CHECK}')
                         with open(file=self.archive_in, mode='w') as archive_in_handle:
                             json.dump(dict(), archive_in_handle, indent=4)
-                    print(f'- {constants.ICON_ARCHIVE:3}Reading static {self.reason} data from file '
+                    print(f'- Reading static {self.reason} data from file '
                           f'{self.archive_in}... ', end='')
                     with open(file=self.archive_in, mode='r') as archive_in_handle:
                         archive_out = json.load(archive_in_handle)
@@ -245,11 +245,12 @@ class Dataset:
                 pool_results = pool.map(self.execute_item, item_list)
                 for pool_result in pool_results:
                     if pool_result['status_code'] != 200:
-                        exiter.exit_zupload(reason='Try ingest error')
+                        exiter.exit_zupload(exit_type='try_ingest')
                     else:
                         checks += 1
                         tools.progress_bar(operation='try_ingest',
-                                           current=checks, total=total,
+                                           current=checks,
+                                           total=total,
                                            additional_info=pool_result)
                 results.extend(pool_results)
         # Uncomment these lines to print the results of the try-ingest.
@@ -303,40 +304,52 @@ class Dataset:
                     base_info['file_metadata_url'] = \
                         file_data_url.replace('data', 'meta')
                 else:
-                    exit(f'{upload_metadata_response.text},'
-                         f'{upload_metadata_response.status_code}')
-                    # todo: Implement exit in case of incorrect upload of
-                    #  meta-data.
-            tools.progress_bar(operation='upload_meta_data', current=index+1,
-                               total=total)
+                    exiter.exit_zupload(
+                        exit_type='upload_meta_data',
+                        info=dict({
+                            'status_code':
+                                upload_metadata_response.status_code,
+                            'text': upload_metadata_response.text
+                        }))
+            tools.progress_bar(operation='upload_meta_data',
+                               current=index+1,
+                               total=total,
+                               additional_info=dict({
+                                   'file_name': base_info['file_name']
+                               }))
         self.store_current_archive()
         return
 
     def upload_data(self):
+        print('- Uploading data.')
         total = len(self.archive_out)
         for index, (base_key, base_info) in \
                 enumerate(self.archive_out.items()):
-            if not base_info['handlers']['upload_data'] or \
-                    'file_data_url' not in base_info.keys():
-                tools.progress_bar(operation='upload_data', current=index + 1,
-                                   total=total)
-                continue
-            json_hash_sum = base_info['json']['hashSum']
-            url = base_info['file_data_url']
-            data = open(file=base_info['file_path'], mode='rb')
-            cookies = tools.load_cookie()
-            upload_data_response = requests.put(
-                url=url,
-                data=data,
-                cookies=cookies
-            )
-            if upload_data_response.status_code == 200:
-                base_info['pid'] = upload_data_response.text
-            else:
-                exit(f'{upload_data_response.status_code}, '
-                     f'{upload_data_response.text}')
-            tools.progress_bar(operation='upload_data', current=index+1,
-                               total=total)
+            if base_info['handlers']['upload_data'] and \
+                    'file_data_url' in base_info.keys():
+                url = base_info['file_data_url']
+                data = open(file=base_info['file_path'], mode='rb')
+                cookies = tools.load_cookie()
+                upload_data_response = requests.put(
+                    url=url,
+                    data=data,
+                    cookies=cookies
+                )
+                if upload_data_response.status_code == 200:
+                    base_info['pid'] = upload_data_response.text
+                else:
+                    exiter.exit_zupload(
+                        exit_type='upload_data',
+                        info=dict({
+                            'status_code': upload_data_response.status_code,
+                            'text': upload_data_response.text
+                        }))
+            tools.progress_bar(operation='upload_data',
+                               current=index+1,
+                               total=total,
+                               additional_info=dict({
+                                   'file_name': base_info['file_name']
+                               }))
         self.store_current_archive()
         return
 
@@ -353,7 +366,7 @@ class Dataset:
             else:
                 print(f'\t{base_key:{base_key_max_length}} '
                       f'No info for file meta-data url')
-        print(f'\tTotal of {len(self.input_data)} items.')
+        print(f'\t---\n\tTotal of {len(self.input_data)} items')
         return
 
     def archive_files(self):

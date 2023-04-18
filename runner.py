@@ -18,7 +18,7 @@ if __name__ == '__main__':
         # Bit handler 7: overwrite archive in.
         #              1234567
         static_mode = '1111111'
-        static_mode = '1111100'
+        static_mode = '0100010'
         skipping_handlers = tools.parse_arguments(static_mode)
     # LPJ-GUESS
     # my_class = lpj_guess_dataset.LpjGuessDataset(
