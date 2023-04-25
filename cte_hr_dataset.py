@@ -23,6 +23,7 @@ import tools
 class CteHrDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
         super().__init__(reason, interactive)
+        return
 
     def archive_files(self):
         """Archive file paths, names, and other information if needed."""
@@ -51,10 +52,13 @@ class CteHrDataset(dataset.Dataset):
                         dataset_object_spec=dataset_object_spec
                     ),
             })
-            self.archive_out[base_key].setdefault('handlers', dict({'archive_json': True,
-                                                                    'try_ingest': True,
-                                                                    'upload_metadata': True,
-                                                                    'upload_data': True}))
+            self.archive_out[base_key].setdefault(
+                'handlers',
+                dict({'archive_json': True,
+                      'try_ingest': True,
+                      'upload_metadata': True,
+                      'upload_data': True})
+            )
             self.archive_out[base_key].setdefault('versions', [])
             tools.progress_bar(
                 operation='archive_system_info',
@@ -66,7 +70,8 @@ class CteHrDataset(dataset.Dataset):
         self.store_current_archive()
         return
 
-    def build_try_ingest_components(self, file_path: str = None, dataset_object_spec: str = None) -> dict:
+    def build_try_ingest_components(self, file_path: str = None,
+                                    dataset_object_spec: str = None) -> dict:
         """Build the try-ingest command for each data file."""
         xarray_dataset = xarray.open_dataset(file_path)
         variable_list = list(xarray_dataset.data_vars)
@@ -91,19 +96,24 @@ class CteHrDataset(dataset.Dataset):
         dataset_object_spec = None
         if 'persector' in file_name:
             dataset_type = 'anthropogenic emissions per sector'
-            dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'anthropogenic_emission_model_results']
         elif 'anthropogenic' in file_name:
             dataset_type = 'anthropogenic emissions'
-            dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'anthropogenic_emission_model_results']
         elif 'nep' in file_name:
             dataset_type = 'biospheric fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS['biospheric_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'biospheric_model_results']
         elif 'fire' in file_name:
             dataset_type = 'fire emissions'
-            dataset_object_spec = constants.OBJECT_SPECS['file_emission_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'file_emission_model_results']
         elif 'ocean' in file_name:
             dataset_type = 'ocean fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS['oceanic_flux_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'oceanic_flux_model_results']
         return dataset_type, dataset_object_spec
 
     # todo: Maybe multi-process this.

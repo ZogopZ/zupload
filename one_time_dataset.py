@@ -16,24 +16,38 @@ import xarray
 # Local application/library specific imports.
 import constants
 import dataset
+import exiter
 import tools
 
 
 class OneTimeDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
         super().__init__(reason, interactive)
+        # Todo: Need a proper way to find and exclude variables.
+        #       Perhaps read here the dataset, but this means we
+        #       will keep it in memory from this point.
+        # We need to exclude variables that are not preview-able on the
+        # data portal.
+        self.excluded_variables = list([
+            'area', 'ensemble_member_name', 'cell_area'
+        ])
         return
 
     def archive_files(self):
         """Archive file paths, names, and other information if needed."""
-        print(f'- {constants.ICON_GEAR:3}Archiving system information of `.{self.file_type}` files... ', end='')
-        for file_path in self.input_data:
+        print('- Archiving system information.')
+        total = len(self.input_data)
+        for index, file_path in enumerate(self.input_data):
             file_name = file_path.split('/')[-1]
-            general_date = re.findall(r'\d{4}', file_name)
-            if len(general_date) != 1:
-                exit(f'\tError! Incorrect 6-digit date values: {general_date} where spotted in file: {file_name}.\n'
-                     f'\tNeed to have only one 6-digit date value specified in file\'s name.\n'
-                     f'\tZbunchpload will now exit.')
+            if (general_date := re.findall(r'\d{4}', file_name)) != 1:
+                user_input = tools.input_handler(
+                    operation='picker',
+                    additional_info=dict({'iterable': general_date})
+                )
+                if user_input == 'e':
+                    exiter.exit_zupload()
+                else:
+                    general_date = [user_input]
             year = general_date[0][0:4]
             month = general_date[0][4:6]
             dataset_type, dataset_object_spec = self.get_file_info(file_name)
@@ -45,23 +59,38 @@ class OneTimeDataset(dataset.Dataset):
                 'dataset_object_spec': dataset_object_spec,
                 'month': month,
                 'year': year,
-                'try_ingest_components': self.build_try_ingest_components(file_path=file_path,
-                                                                          dataset_object_spec=dataset_object_spec),
+                'try_ingest_components':
+                    self.build_try_ingest_components(
+                        file_path=file_path,
+                        dataset_object_spec=dataset_object_spec
+                    ),
             })
-            self.archive_out[base_key].setdefault('handlers', dict({'archive_json': True,
-                                                                    'try_ingest': True,
-                                                                    'upload_metadata': True,
-                                                                    'upload_data': True}))
+            self.archive_out[base_key].setdefault(
+                'handlers',
+                dict({'archive_json': True,
+                      'try_ingest': True,
+                      'upload_metadata': True,
+                      'upload_data': True})
+            )
             self.archive_out[base_key].setdefault('versions', [])
+            tools.progress_bar(
+                operation='archive_system_info',
+                current=index + 1, total=total,
+                additional_info=dict({'file_name': file_name})
+            )
         # Sort archive's items.
         self.archive_out = dict(sorted(self.archive_out.items()))
-        print(constants.ICON_CHECK)
+        self.store_current_archive()
         return
 
-    def build_try_ingest_components(self, file_path: str = None, dataset_object_spec: str = None) -> dict:
+    def build_try_ingest_components(self, file_path: str = None,
+                                    dataset_object_spec: str = None) -> dict:
         """Build the try-ingest command for each data file."""
         xarray_dataset = xarray.open_dataset(file_path)
-        variable_list = list(variable for variable in xarray_dataset.data_vars if variable != 'area')
+        variable_list = list(
+            variable for variable in xarray_dataset.data_vars
+            if variable not in self.excluded_variables
+        )
         # The variable list must be formatted like this:
         # '["variable_1", "variable_2", ...]'
         # Formatting like this e.g: "['variable_1', 'variable_2', ...]"
@@ -83,22 +112,30 @@ class OneTimeDataset(dataset.Dataset):
         dataset_object_spec = None
         if 'persector' in file_name:
             dataset_type = 'anthropogenic emissions per sector'
-            dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'anthropogenic_emission_model_results']
         elif 'anthropogenic' in file_name:
             dataset_type = 'anthropogenic emissions'
-            dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'anthropogenic_emission_model_results']
         elif 'nep' in file_name:
             dataset_type = 'biospheric fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS['biospheric_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'biospheric_model_results']
         elif 'fire' in file_name:
             dataset_type = 'fire emissions'
-            dataset_object_spec = constants.OBJECT_SPECS['file_emission_model_results']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'file_emission_model_results']
         elif 'ocean' in file_name:
             dataset_type = 'ocean fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS['oceanic_flux_model_results']
-        elif any(part in file_name for part in ['CSR', 'LUMIA', 'Priors']):
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'oceanic_flux_model_results']
+        elif any(part in file_name for part in [
+            'CSR', 'LUMIA', 'Priors', 'GCP'
+        ]):
             dataset_type = 'inversion modeling spatial'
-            dataset_object_spec = constants.OBJECT_SPECS['inversion_modeling_spatial']
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'inversion_modeling_spatial']
         return dataset_type, dataset_object_spec
 
     # todo: Maybe multi-process this.
@@ -110,66 +147,110 @@ class OneTimeDataset(dataset.Dataset):
         to be rerun each time we need to change something in the meta-data.
         If we decide to rerun this then it is mandatory that we also
         overwrite the `archive_in_nc.json` file using the function
-        `store_current_archive()` at the end of the script.
-
+        `store_current_archive()`.
         """
-        print(f'- {constants.ICON_GEAR:3}Archiving meta-data... ', end='', flush=True)
-        for base_key, base_info in self.archive_out.items():
+        print('- Archiving meta-data (Includes hash-sum calculation.)')
+        total = len(self.archive_out)
+        for index, (base_key, base_info) in \
+                enumerate(self.archive_out.items()):
+            if total != 1:
+                tools.progress_bar(operation='archive_meta_data',
+                                   current=index+1,
+                                   total=total,
+                                   additional_info=dict({
+                                       'file_name': base_info['file_name']
+                                   }))
             if not base_info['handlers']['upload_metadata']:
                 continue
             xarray_dataset = xarray.open_dataset(base_info['file_path'])
             if len(xarray_dataset.creation_date) < 16:
-                creation_date = datetime.strptime(xarray_dataset.creation_date, '%Y-%m-%d')
+                creation_date = datetime.strptime(
+                    xarray_dataset.creation_date, '%Y-%m-%d')
             else:
-                creation_date = datetime.strptime(xarray_dataset.creation_date, '%Y-%m-%d %H:%M')
+                creation_date = datetime.strptime(
+                    xarray_dataset.creation_date, '%Y-%m-%d %H:%M')
             base_info['json'] = dict({
                 'fileName': base_info['file_name'],
-                'hashSum': self.get_hash_sum(file_path=base_info['file_path']),
-                'isNextVersionOf': [] if not base_info['versions'] else base_info['versions'][-1].rsplit('/')[-1],
+                'hashSum':
+                    tools.get_hash_sum(file_path=base_info['file_path'],
+                                       progress=True),
+                'isNextVersionOf': [] if not base_info['versions'] else
+                base_info['versions'][-1].rsplit('/')[-1],
                 'objectSpecification': base_info['dataset_object_spec'],
                 'references': {
-                    'keywords': ['carbon flux'],
-                    'licence': 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence'
+                    'keywords': [
+                        keyword.strip(' ') for keyword in
+                        xarray_dataset.keywords.split(',')
+                    ],
+                    'licence': constants.ICOS_LICENSE
                 },
                 'specificInfo': {
                     'description': xarray_dataset.summary,
                     'production': {
                         'contributors': [
-                            'http://meta.icos-cp.eu/resources/people/Guillaume_Monteil'
+                            constants.FREDERIC_CHEVALLIER,
+                            constants.CHRISTIAN_ROEDENBECK,
+                            constants.YOSUKE_NIWA,
+                            constants.JUNJIE_LIU,
+                            constants.LIANG_FENG,
+                            constants.PAUL_PALMER,
+                            constants.KEVIN_BOWMAN,
+                            constants.WOUTER_PETERS,
+                            constants.XIANGJUN_TIAN,
+                            constants.SHILONG_PIAO,
+                            constants.BO_ZHENG
                         ],
-                        'creationDate': creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                        'creator': 'http://meta.icos-cp.eu/resources/people/Saqr_Munassar',
-                        'hostOrganization': 'http://meta.icos-cp.eu/resources/organizations/MPI-BGC',
+                        'creationDate':
+                            creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'creator': constants.INGRID_LUIJKX,
+                        'hostOrganization': constants.WUR,
                         'sources': [],
                     },
-                    'spatial': {
-                        'min':
-                            {
-                                'lat': xarray_dataset.lat.min().item(),
-                                'lon': xarray_dataset.lon.min().item()
-                            },
-                        'max':
-                            {
-                                'lat': xarray_dataset.lat.max().item(),
-                                'lon': xarray_dataset.lon.max().item()
-                            }
-                    },
+                    'spatial': self.get_spatial(dataset=xarray_dataset),
                     'temporal': {
                         'interval': {
-                            'start': xarray_dataset.time[0].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
-                            'stop': xarray_dataset.time[-1].dt.strftime('%Y-%m-%dT%H:%M:%SZ').item(),
+                            'start': xarray_dataset.time[0].dt.strftime(
+                                    '%Y-%m-%dT%H:%M:%SZ').item(),
+                            'stop': xarray_dataset.time[-1].dt.strftime(
+                                '%Y-%m-%dT%H:%M:%SZ').item(),
                         },
                         'resolution': 'monthly'
                     },
                     'title': xarray_dataset.title,
-                    'variables': [variable for variable in xarray_dataset.data_vars if variable != 'area'],
+                    'variables': list(
+                        variable for variable in xarray_dataset.data_vars
+                        if variable not in self.excluded_variables
+                    ),
                 },
                 'submitterId': 'CP'
             })
             json_file_name = base_key + '.json'
-            json_file_path = os.path.join(self.json_standalone_files, json_file_name)
+            json_file_path = os.path.join(self.json_standalone_files,
+                                          json_file_name)
             base_info['json_file_path'] = json_file_path
             tools.write_json(path=json_file_path, content=base_info['json'])
-        print(constants.ICON_CHECK, flush=True)
+        # Sort archive's items.
+        self.archive_out = dict(sorted(self.archive_out.items()))
+        self.store_current_archive()
         return
+
+
+    @staticmethod
+    def get_spatial(dataset: xarray = None) -> dict:
+        spatial = dict({
+            '_type': 'LatLonBox',
+            'min': {'lat': None, 'lon': None},
+            'max': {'lat': None, 'lon': None}
+        })
+        if all(key in dataset for key in ['lat', 'lon']):
+            spatial['min']['lat'] = dataset.lat.min().item()
+            spatial['min']['lon'] = dataset.lon.min().item()
+            spatial['max']['lat'] = dataset.lat.max().item()
+            spatial['max']['lon'] = dataset.lon.max().item()
+        elif all(key in dataset for key in ['latitude', 'longitude']):
+            spatial['min']['lat'] = dataset.latitude.min().item()
+            spatial['min']['lon'] = dataset.longitude.min().item()
+            spatial['max']['lat'] = dataset.latitude.max().item()
+            spatial['max']['lon'] = dataset.longitude.max().item()
+        return spatial
 

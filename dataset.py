@@ -63,7 +63,7 @@ class Dataset:
             if input_content is None:
                 # todo: Maybe make this part interactive using the self.interactive class attribute.
                 # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-                search_string = 'input-files/data-files/ctehires/.*.nc'
+                search_string = 'input-files/data-files/gcp/.*.nc'
                 found_files = sorted(tools.find_files(search_string=search_string))
             else:
                 found_files = sorted(input_content)
@@ -99,7 +99,7 @@ class Dataset:
             # Home directory for cte-hr fluxes.
             # search_string = '/ctehires/upload/remco/
             # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/.*global.*.nc'
-            search_string = '/ctehires/upload/remco/.*202209.*.nc'
+            search_string = '/gcp/.*.nc'
             found_files = sorted(tools.find_files(search_string=search_string))
             file_listing = list()
             for file in found_files:
@@ -117,7 +117,8 @@ class Dataset:
             if not self.interactive:
                 # Archive in file does not exist.
                 if not os.path.exists(self.archive_in):
-                    print(f'- {constants.ICON_ARCHIVE:3}Creating file {self.archive_in}... ', end='')
+                    print(f'- Creating file {self.archive_in} '
+                          f'{constants.ICON_CHECK}')
                     Path(self.archive_in).touch()
                     # todo: Maybe remove these next 2 lines.
                     # with open(file=self.archive_in, mode='w+'):
@@ -126,15 +127,15 @@ class Dataset:
                 else:
                     # Archive in is empty.
                     if os.stat(self.archive_in).st_size == 0:
-                        print(f'- {constants.ICON_ARCHIVE:3}File {self.archive_in} exists but it is '
-                              f'empty. Converting it to json... {constants.ICON_CHECK}')
+                        print(f'- File {self.archive_in} exists but it\'s '
+                              f'empty. Converting it to json '
+                              f'{constants.ICON_CHECK}')
                         with open(file=self.archive_in, mode='w') as archive_in_handle:
                             json.dump(dict(), archive_in_handle, indent=4)
                     print(f'- Reading static {self.reason} data from file '
-                          f'{self.archive_in}... ', end='')
+                          f'{self.archive_in} {constants.ICON_CHECK}')
                     with open(file=self.archive_in, mode='r') as archive_in_handle:
                         archive_out = json.load(archive_in_handle)
-                print(constants.ICON_CHECK)
                 break
             # todo: Implement the user interaction of reading static files.
             #  Until then return an "error" message.
@@ -245,7 +246,8 @@ class Dataset:
                 pool_results = pool.map(self.execute_item, item_list)
                 for pool_result in pool_results:
                     if pool_result['status_code'] != 200:
-                        exiter.exit_zupload(exit_type='try_ingest')
+                        exiter.exit_zupload(exit_type='try_ingest',
+                                            info=pool_result)
                     else:
                         checks += 1
                         tools.progress_bar(operation='try_ingest',
@@ -253,9 +255,6 @@ class Dataset:
                                            total=total,
                                            additional_info=pool_result)
                 results.extend(pool_results)
-        # Uncomment these lines to print the results of the try-ingest.
-        # print('')
-        # [print(result) for result in results]
         return
 
     @staticmethod
@@ -309,7 +308,8 @@ class Dataset:
                         info=dict({
                             'status_code':
                                 upload_metadata_response.status_code,
-                            'text': upload_metadata_response.text
+                            'text': upload_metadata_response.text,
+                            'file_name': base_info['file_name']
                         }))
             tools.progress_bar(operation='upload_meta_data',
                                current=index+1,
@@ -342,7 +342,8 @@ class Dataset:
                         exit_type='upload_data',
                         info=dict({
                             'status_code': upload_data_response.status_code,
-                            'text': upload_data_response.text
+                            'text': upload_data_response.text,
+                            'file_name': base_info['file_name']
                         }))
             tools.progress_bar(operation='upload_data',
                                current=index+1,
