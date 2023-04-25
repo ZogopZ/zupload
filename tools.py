@@ -17,6 +17,7 @@ from icoscp.sparql.runsparql import RunSparql
 # Local application/library specific imports.
 import constants
 import exiter
+import tools
 
 
 def read_json(path: str = None, json_data: str = None):
@@ -59,11 +60,11 @@ def check_permissions():
         if os.path.exists(constants.COOKIES) and validate_cookie():
             valid_cookie = True
         elif os.path.exists(constants.COOKIES) and not validate_cookie():
-            user_input = input_handler(operation='authenticate')
+            user_input = input_handler(operation='authentication')
             if user_input == 'r':
                 valid_cookie = True if curl_cookie() else False
             elif user_input == 'e':
-                exiter.exit_zupload(reason='Unwillingness to authenticate')
+                exiter.exit_zupload(exit_type='authentication')
         else:
             valid_cookie = curl_cookie()
     return
@@ -72,8 +73,8 @@ def check_permissions():
 def curl_cookie():
     validation = False
     url = 'https://cpauth.icos-cp.eu/password/login'
-    data = {'mail': input('\tPlease enter your e-mail: '),
-            'password': getpass(prompt='\tPlease enter your password: ')}
+    data = {'mail': tools.input_handler(operation='username'),
+            'password': tools.input_handler(operation='password')}
     cookie_response = requests.post(url=url, data=data)
     if cookie_response.status_code == 200:
         validation = True
@@ -241,7 +242,7 @@ def zip_files(files: list = None, p_output_file: str = None):
     return
 
 
-def  get_hash_sum(file_path: str = None, progress: bool = True) -> str:
+def get_hash_sum(file_path: str = None, progress: bool = True) -> str:
     """Calculate and return hash-sum of given file."""
     sha256_hash = hashlib.sha256()
     with open(file=file_path, mode='rb') as file_handle:
@@ -465,13 +466,22 @@ def input_handler(operation: str = None, additional_info: dict = None) -> str:
             f'{additional_info["archive"]}\n'
             f'\tAre you sure you want to continue? (Y/n): '
         )
-    elif operation == 'authenticate':
+    elif operation == 'authentication':
         input_prepender = (
             f'\tFile {constants.COOKIES} exists in the current working '
             f'directory but it is outdated:\n'
-            f'\t  - Continue with current cookie {constants.ICON_ARROW} c\n'
-            f'\t  - Regenerate cookie {constants.ICON_ARROW} r\n'
-            f'\t  - Exit zupload {constants.ICON_ARROW} e\n'
-            f'\t Please enter a selection (c/r/e): ')
-    user_input = input(input_prepender)
+            f'\t- Continue with current cookie {constants.ICON_ARROW} c\n'
+            f'\t- Regenerate cookie {constants.ICON_ARROW} r\n'
+            f'\tPlease enter a selection (c/r/e to exit): ')
+    elif operation == 'picker':
+        input_prepender = (
+            '\tPlease type year and month for your dataset (e.g.: 202312)'
+            '.\n\tThese values might end up in the meta-data title.'
+            ' (e to exit): ')
+    elif operation == 'username':
+        input_prepender = '\tPlease enter your e-mail: '
+    elif operation == 'password':
+        input_prepender = '\tPlease enter your password: '
+    user_input = input(input_prepender) \
+        if operation != 'password' else getpass(prompt=input_prepender)
     return user_input

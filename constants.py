@@ -30,15 +30,27 @@ REST_COUNTRIES = 'https://restcountries.com/v3.1/all'
 P_REST_COUNTRIES = 'input-files/rest_countries.json'
 # People
 AUKE_WOUDE = 'http://meta.icos-cp.eu/resources/people/Auke_van_der_Woude'
+BO_ZHENG = 'http://meta.icos-cp.eu/resources/people/BoZheng'
+CHRISTIAN_ROEDENBECK = \
+    'http://meta.icos-cp.eu/resources/people/Christian_R%C3%B6denbeck'
+FREDERIC_CHEVALLIER = \
+    'http://meta.icos-cp.eu/resources/people/Fr%C3%A9d%C3%A9ric_Chevallier'
 INGRID_LUIJKX = \
     'http://meta.icos-cp.eu/resources/people/Ingrid_van%20der%20Laan-Luijkx'
 JACOB_NELSON = 'http://meta.icos-cp.eu/resources/people/Jacob_Nelson'
+JUNJIE_LIU = 'http://meta.icos-cp.eu/resources/people/JunjieLiu'
+KEVIN_BOWMAN = 'http://meta.icos-cp.eu/resources/people/KevinBowman'
+LIANG_FENG = 'http://meta.icos-cp.eu/resources/people/Liang_Feng'
 NAOMI_SMITH = 'http://meta.icos-cp.eu/resources/people/Naomi_Smith'
+PAUL_PALMER = 'http://meta.icos-cp.eu/resources/people/Paul_Palmer'
 REMCO_DE_KOK = 'http://meta.icos-cp.eu/resources/people/Remco_de_Kok'
+SHILONG_PIAO = 'http://meta.icos-cp.eu/resources/people/Shilong_Piao'
 SIMON_BESNARD = 'http://meta.icos-cp.eu/resources/people/Simon_Besnard'
 SOPHIA_WALTHER = 'http://meta.icos-cp.eu/resources/people/Sophia_Walther'
 ULRICH_WEBER = 'http://meta.icos-cp.eu/resources/people/Ulrich_Weber'
 WOUTER_PETERS = 'http://meta.icos-cp.eu/resources/people/Wouter_Peters'
+XIANGJUN_TIAN = 'http://meta.icos-cp.eu/resources/people/Xiangjun_Tian'
+YOSUKE_NIWA = 'http://meta.icos-cp.eu/resources/people/Yosuke_Niwa'
 # Organizations
 MPI_BGC = 'http://meta.icos-cp.eu/resources/organizations/MPI-BGC'
 WUR = 'http://meta.icos-cp.eu/resources/organizations/WUR'
