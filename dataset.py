@@ -63,7 +63,7 @@ class Dataset:
             if input_content is None:
                 # todo: Maybe make this part interactive using the self.interactive class attribute.
                 # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-                search_string = 'input-files/data-files/gcp/.*.nc'
+                search_string = 'input-files/data-files/gaw/.*.zip'
                 found_files = sorted(tools.find_files(search_string=search_string))
             else:
                 found_files = sorted(input_content)

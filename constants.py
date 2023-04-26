@@ -51,7 +51,9 @@ ULRICH_WEBER = 'http://meta.icos-cp.eu/resources/people/Ulrich_Weber'
 WOUTER_PETERS = 'http://meta.icos-cp.eu/resources/people/Wouter_Peters'
 XIANGJUN_TIAN = 'http://meta.icos-cp.eu/resources/people/Xiangjun_Tian'
 YOSUKE_NIWA = 'http://meta.icos-cp.eu/resources/people/Yosuke_Niwa'
+ZHENDONG_WU = 'http://meta.icos-cp.eu/resources/people/Zhendong_Wu'
 # Organizations
+CARBON_PORTAL = 'http://meta.icos-cp.eu/resources/organizations/CP'
 MPI_BGC = 'http://meta.icos-cp.eu/resources/organizations/MPI-BGC'
 WUR = 'http://meta.icos-cp.eu/resources/organizations/WUR'
 # Licenses
@@ -61,3 +63,6 @@ META_DATA_UPLOAD_URL = 'https://meta.icos-cp.eu/upload'
 WHO_AM_I = 'https://cpauth.icos-cp.eu/whoami'
 # Latitude, longitude boxes
 CTE_HR_BOX = 'http://meta.icos-cp.eu/resources/latlonboxes/ctehrEuropeLatLonBox'
+GLOBAL_BOX = 'http://meta.icos-cp.eu/resources/latlonboxes/globalLatLonBox'
+# Submitters
+STANDARD_SUBMITTER = 'CP'

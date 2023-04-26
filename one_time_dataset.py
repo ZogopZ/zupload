@@ -86,18 +86,23 @@ class OneTimeDataset(dataset.Dataset):
     def build_try_ingest_components(self, file_path: str = None,
                                     dataset_object_spec: str = None) -> dict:
         """Build the try-ingest command for each data file."""
-        xarray_dataset = xarray.open_dataset(file_path)
-        variable_list = list(
-            variable for variable in xarray_dataset.data_vars
-            if variable not in self.excluded_variables
-        )
-        # The variable list must be formatted like this:
-        # '["variable_1", "variable_2", ...]'
-        # Formatting like this e.g: "['variable_1', 'variable_2', ...]"
-        # will probably result in a try ingest error.
-        # This is why we use json.dumps,
-        # to create a specifically formatted string.
-        variables = f'{json.dumps(variable_list)}'
+        try:
+            xarray_dataset = xarray.open_dataset(file_path)
+        except ValueError as e:
+            variables = None
+        else:
+            variable_list = list(
+                variable for variable in xarray_dataset.data_vars
+                if variable not in self.excluded_variables
+            )
+            # The variable list must be formatted like this:
+            # '["variable_1", "variable_2", ...]'
+            # Formatting like this e.g:
+            # "['variable_1', 'variable_2', ...]"
+            # will probably result in a try ingest error.
+            # This is why we use json.dumps,
+            # to create a specifically formatted string.
+            variables = f'{json.dumps(variable_list)}'
         try_ingest_url = 'https://data.icos-cp.eu/tryingest'
         params = dict({'specUri': dataset_object_spec,
                        'varnames': variables})
@@ -136,6 +141,10 @@ class OneTimeDataset(dataset.Dataset):
             dataset_type = 'inversion modeling spatial'
             dataset_object_spec = constants.OBJECT_SPECS[
                 'inversion_modeling_spatial']
+        elif '.zip' in file_name:
+            dataset_type = 'model data archive'
+            dataset_object_spec = constants.OBJECT_SPECS[
+                'model_data_archive']
         return dataset_type, dataset_object_spec
 
     # todo: Maybe multi-process this.
@@ -162,13 +171,13 @@ class OneTimeDataset(dataset.Dataset):
                                    }))
             if not base_info['handlers']['upload_metadata']:
                 continue
-            xarray_dataset = xarray.open_dataset(base_info['file_path'])
-            if len(xarray_dataset.creation_date) < 16:
-                creation_date = datetime.strptime(
-                    xarray_dataset.creation_date, '%Y-%m-%d')
-            else:
-                creation_date = datetime.strptime(
-                    xarray_dataset.creation_date, '%Y-%m-%d %H:%M')
+            # xarray_dataset = xarray.open_dataset(base_info['file_path'])
+            # if len(xarray_dataset.creation_date) < 16:
+            #     creation_date = datetime.strptime(
+            #         xarray_dataset.creation_date, '%Y-%m-%d')
+            # else:
+            #     creation_date = datetime.strptime(
+            #         xarray_dataset.creation_date, '%Y-%m-%d %H:%M')
             base_info['json'] = dict({
                 'fileName': base_info['file_name'],
                 'hashSum':
@@ -178,51 +187,55 @@ class OneTimeDataset(dataset.Dataset):
                 base_info['versions'][-1].rsplit('/')[-1],
                 'objectSpecification': base_info['dataset_object_spec'],
                 'references': {
-                    'keywords': [
-                        keyword.strip(' ') for keyword in
-                        xarray_dataset.keywords.split(',')
-                    ],
+                    # 'keywords': [
+                        # keyword.strip(' ') for keyword in
+                        # xarray_dataset.keywords.split(',')
+                    # ],
                     'licence': constants.ICOS_LICENSE
                 },
                 'specificInfo': {
-                    'description': xarray_dataset.summary,
+                    # 'description': xarray_dataset.summary,
                     'production': {
                         'contributors': [
-                            constants.FREDERIC_CHEVALLIER,
-                            constants.CHRISTIAN_ROEDENBECK,
-                            constants.YOSUKE_NIWA,
-                            constants.JUNJIE_LIU,
-                            constants.LIANG_FENG,
-                            constants.PAUL_PALMER,
-                            constants.KEVIN_BOWMAN,
-                            constants.WOUTER_PETERS,
-                            constants.XIANGJUN_TIAN,
-                            constants.SHILONG_PIAO,
-                            constants.BO_ZHENG
+                        #     constants.FREDERIC_CHEVALLIER,
+                        #     constants.CHRISTIAN_ROEDENBECK,
+                        #     constants.YOSUKE_NIWA,
+                        #     constants.JUNJIE_LIU,
+                        #     constants.LIANG_FENG,
+                        #     constants.PAUL_PALMER,
+                        #     constants.KEVIN_BOWMAN,
+                        #     constants.WOUTER_PETERS,
+                        #     constants.XIANGJUN_TIAN,
+                        #     constants.SHILONG_PIAO,
+                        #     constants.BO_ZHENG
                         ],
-                        'creationDate':
-                            creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                        'creator': constants.INGRID_LUIJKX,
-                        'hostOrganization': constants.WUR,
+                        'creationDate': '2023-04-25T12:00:00Z',
+                            # creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'creator': constants.ZHENDONG_WU,
+                        'hostOrganization': constants.CARBON_PORTAL,
                         'sources': [],
                     },
-                    'spatial': self.get_spatial(dataset=xarray_dataset),
+                    # 'spatial': self.get_spatial(dataset=xarray_dataset),
+                    'spatial': constants.GLOBAL_BOX,
                     'temporal': {
                         'interval': {
-                            'start': xarray_dataset.time[0].dt.strftime(
-                                    '%Y-%m-%dT%H:%M:%SZ').item(),
-                            'stop': xarray_dataset.time[-1].dt.strftime(
-                                '%Y-%m-%dT%H:%M:%SZ').item(),
+                            'start': '1980-01-01T00:00:00Z',
+                            'stop': '2020-12-31T23:59:59Z',
+                            # 'start': xarray_dataset.time[0].dt.strftime(
+                            #         '%Y-%m-%dT%H:%M:%SZ').item(),
+                            # 'stop': xarray_dataset.time[-1].dt.strftime(
+                            #     '%Y-%m-%dT%H:%M:%SZ').item(),
                         },
-                        'resolution': 'monthly'
+                        # 'resolution': 'monthly'
                     },
-                    'title': xarray_dataset.title,
-                    'variables': list(
-                        variable for variable in xarray_dataset.data_vars
-                        if variable not in self.excluded_variables
-                    ),
+                    # 'title': xarray_dataset.title,
+                    'title': 'GAW Data',
+                    # 'variables': list(
+                    #     variable for variable in xarray_dataset.data_vars
+                    #     if variable not in self.excluded_variables
+                    # ),
                 },
-                'submitterId': 'CP'
+                'submitterId': constants.STANDARD_SUBMITTER
             })
             json_file_name = base_key + '.json'
             json_file_path = os.path.join(self.json_standalone_files,
