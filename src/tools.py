@@ -15,9 +15,9 @@ import requests
 from icoscp.sparql.runsparql import RunSparql
 
 # Local application/library specific imports.
-import constants
-import exiter
-import tools
+import src.constants as constants
+import src.exiter as exiter
+import src.tools as tools
 
 
 def read_json(path: str = None, json_data: str = None):
@@ -271,25 +271,36 @@ def get_specification(file_name: str = None) -> tuple:
     dataset_object_spec = None
     if 'persector' in file_name:
         dataset_type = 'anthropogenic emissions per sector'
-        dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['anthropogenic_emission_model_results']
     elif 'anthropogenic' in file_name:
         dataset_type = 'anthropogenic emissions'
-        dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['anthropogenic_emission_model_results']
     elif 'nep' in file_name:
         dataset_type = 'biospheric fluxes'
-        dataset_object_spec = constants.OBJECT_SPECS['biospheric_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['biospheric_model_results']
     elif 'fire' in file_name:
         dataset_type = 'fire emissions'
-        dataset_object_spec = constants.OBJECT_SPECS['file_emission_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['file_emission_model_results']
     elif 'ocean' in file_name:
         dataset_type = 'ocean fluxes'
-        dataset_object_spec = constants.OBJECT_SPECS['oceanic_flux_model_results']
-    elif any(part in file_name for part in ['CSR', 'LUMIA', 'Priors']):
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['oceanic_flux_model_results']
+    elif any(part in file_name for part in ['CSR', 'LUMIA', 'Priors', 'GCP']):
         dataset_type = 'inversion modeling spatial'
-        dataset_object_spec = constants.OBJECT_SPECS['inversion_modeling_spatial']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['inversion_modeling_spatial']
     elif 'zip' in file_name:
         dataset_type = 'model data archive'
-        dataset_object_spec = constants.OBJECT_SPECS['model_data_archive']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['model_data_archive']
+    elif 'VPRM' in file_name:
+        dataset_type = 'biosphere modeling spatial'
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['biosphere_modeling_spatial']
     return dataset_type, dataset_object_spec
 
 
@@ -431,6 +442,10 @@ def progress_bar(operation: str = None, current: int = None,
     elif operation == 'upload_data':
         prepender = (
             f'\tUploaded data for file: {additional_info["file_name"]}'
+        )
+    elif operation == 'chunk':
+        prepender = (
+            f'\tUploading data: '
         )
     fraction = current / total
     arrow = int(fraction * bar_length - 1) * '-' + '>'

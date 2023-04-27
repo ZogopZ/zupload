@@ -1,9 +1,9 @@
 import sys
-import tools
-import cte_hr_dataset
-import lpj_guess_dataset
-import one_time_dataset
-import remote_sensing_dataset
+import src.tools as tools
+import src.cte_hr_dataset as cte_hr_dataset
+import src.NEEDS_UPDATING_lpj_guess_dataset as NEEDS_UPDATING_lpj_guess_dataset
+import src.one_time_dataset as one_time_dataset
+import src.remote_sensing_dataset as remote_sensing_dataset
 
 if __name__ == '__main__':
     if len(sys.argv) == 2:
@@ -18,7 +18,7 @@ if __name__ == '__main__':
         # Bit handler 7: overwrite archive in.
         #              1234567
         static_mode = '1111111'
-        static_mode = '0100110'
+        static_mode = '1100010'
         skipping_handlers = tools.parse_arguments(static_mode)
     # LPJ-GUESS
     # my_class = lpj_guess_dataset.LpjGuessDataset(

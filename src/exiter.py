@@ -60,6 +60,11 @@ def exit_zupload(exit_type: str = None, info: dict = None):
                 f'\tControlled exit during authentication.\n'
                 f'\tZupload will now exit.'
             )
+        elif exit_type == 'todo':
+            exit_message = (
+                f'\tControlled exit dues to todos.\n'
+                f'\tZupload will now exit.'
+            )
     else:
         exit_message = 'Zupload will now exit.'
     exit(exit_message)

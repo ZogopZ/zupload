@@ -15,9 +15,9 @@ import requests
 # import cte_hr_dataset
 # import dataset
 # import lpj_guess_dataset
-import constants
-import exiter
-import tools
+import src.constants as constants
+import src.exiter as exiter
+import src.tools as tools
 
 
 class Dataset:
@@ -63,7 +63,7 @@ class Dataset:
             if input_content is None:
                 # todo: Maybe make this part interactive using the self.interactive class attribute.
                 # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-                search_string = 'input-files/data-files/gaw/.*.zip'
+                search_string = 'input-files/data-files/gcp/.*.nc'
                 found_files = sorted(tools.find_files(search_string=search_string))
             else:
                 found_files = sorted(input_content)
@@ -322,9 +322,34 @@ class Dataset:
 
     def upload_data(self):
         print('- Uploading data.')
+        exiter.exit_zupload(exit_type='todo')
         total = len(self.archive_out)
         for index, (base_key, base_info) in \
                 enumerate(self.archive_out.items()):
+            ###
+            # Define a generator function to iterate over the file in chunks
+            def read_chunks(file_path, chunk_size):
+                total_size = os.path.getsize(file_path)
+                with open(file_path, 'rb') as file_handler:
+                    while True:
+                        chunk = file_handler.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+                        tools.progress_bar(current=file_handler.tell(),
+                                           total=total_size)
+
+            file_path = '/home/zois/Downloads/screen-capture.webm'
+            # file_path = base_info['file_path']
+            url = 'https://httpbin.org/put'
+            headers = {"Transfer-Encoding": "chunked"}
+            chunk_size = 1024 * 1024  # 1 MB
+            for chunk in read_chunks(file_path, chunk_size):
+                response = requests.put(url, files={"file": chunk},
+                                        headers={
+                                            'Transfer-Encoding': 'chunked'})
+            exiter.exit_zupload()
+            ###
             if base_info['handlers']['upload_data'] and \
                     'file_data_url' in base_info.keys():
                 url = base_info['file_data_url']
@@ -335,6 +360,7 @@ class Dataset:
                     data=data,
                     cookies=cookies
                 )
+                exiter.exit_zupload()
                 if upload_data_response.status_code == 200:
                     base_info['pid'] = upload_data_response.text
                 else:
