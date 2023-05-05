@@ -3,6 +3,7 @@
 from multiprocessing import Pool
 from pathlib import Path
 from pprint import pprint
+from typing import Generator
 import hashlib
 import json
 import os
@@ -63,7 +64,7 @@ class Dataset:
             if input_content is None:
                 # todo: Maybe make this part interactive using the self.interactive class attribute.
                 # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-                search_string = 'input-files/data-files/gcp/.*.nc'
+                search_string = 'input-files/data-files/vprm/.*.nc'
                 found_files = sorted(tools.find_files(search_string=search_string))
             else:
                 found_files = sorted(input_content)
@@ -89,26 +90,23 @@ class Dataset:
         self._input_data = found_files
         return
 
-    # todo: Do I need to keep this as a method?
-    @staticmethod
-    def get_input_files() -> list:
-        print(f'- {constants.ICON_DATA:3}Obtaining data files...')
-        while True:
-            # todo: Maybe make this part interactive using the self.interactive class attribute.
-            # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
-            # Home directory for cte-hr fluxes.
-            # search_string = '/ctehires/upload/remco/
-            # search_string = '/data/flexpart/output/LPJoutput/MarkoRun2022global/nc2022/.*global.*.nc'
-            search_string = '/gcp/.*.nc'
-            found_files = sorted(tools.find_files(search_string=search_string))
-            file_listing = list()
-            for file in found_files:
-                file_listing.append(f'{file} ({humanize.naturalsize(os.stat(file).st_size)})')
-            if input(f'\tWould you like to see the files? (Y/n): ') == 'Y':
-                print(f'\tListing files...', *file_listing, sep='\n\t\t')
-            if input(f'\tTotal of {len(found_files)} files. Will these do? (Y/n): ') == 'Y':
-                break
-        return found_files
+    # # todo: Do I need to keep this as a method?
+    # @staticmethod
+    # def get_input_files() -> list:
+    #     print(f'- {constants.ICON_DATA:3}Obtaining data files...')
+    #     while True:
+    #         # todo: Maybe make this part interactive using the self.interactive class attribute.
+    #         # search_string = input('\tPlease enter files\' path followed by regular expression if needed: ')
+    #         search_string = 'GCP2022_inversions_1x1_version1_2_20230428.nc'
+    #         found_files = sorted(tools.find_files(search_string=search_string))
+    #         file_listing = list()
+    #         for file in found_files:
+    #             file_listing.append(f'{file} ({humanize.naturalsize(os.stat(file).st_size)})')
+    #         if input(f'\tWould you like to see the files? (Y/n): ') == 'Y':
+    #             print(f'\tListing files...', *file_listing, sep='\n\t\t')
+    #         if input(f'\tTotal of {len(found_files)} files. Will these do? (Y/n): ') == 'Y':
+    #             break
+    #     return found_files
 
     def read_static_data(self) -> dict:
         """Read static data from existing archive."""
@@ -293,6 +291,7 @@ class Dataset:
                 headers = {'Content-Type': 'application/json'}
                 upload_metadata_response = requests.post(
                     url=constants.META_DATA_UPLOAD_URL,
+                    # url=constants.META_STAGING_DATA_UPLOAD_URL,
                     data=data,
                     headers=headers,
                     cookies=cookies
@@ -320,63 +319,56 @@ class Dataset:
         self.store_current_archive()
         return
 
+    @staticmethod
+    def read_chunks(file_path: str = None, chunk_size: int = 1024*1024*10) \
+            -> Generator[int, None, None]:
+        """A generator function to iterate over the file in chunks."""
+        total_size = os.path.getsize(file_path)
+        with open(file_path, 'rb') as file_handler:
+            while True:
+                chunk = file_handler.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+                tools.progress_bar(current=file_handler.tell(),
+                                   total=total_size)
+        return
+
     def upload_data(self):
         print('- Uploading data.')
-        exiter.exit_zupload(exit_type='todo')
         total = len(self.archive_out)
         for index, (base_key, base_info) in \
                 enumerate(self.archive_out.items()):
-            ###
-            # Define a generator function to iterate over the file in chunks
-            def read_chunks(file_path, chunk_size):
-                total_size = os.path.getsize(file_path)
-                with open(file_path, 'rb') as file_handler:
-                    while True:
-                        chunk = file_handler.read(chunk_size)
-                        if not chunk:
-                            break
-                        yield chunk
-                        tools.progress_bar(current=file_handler.tell(),
-                                           total=total_size)
-
-            file_path = '/home/zois/Downloads/screen-capture.webm'
-            # file_path = base_info['file_path']
-            url = 'https://httpbin.org/put'
-            headers = {"Transfer-Encoding": "chunked"}
-            chunk_size = 1024 * 1024  # 1 MB
-            for chunk in read_chunks(file_path, chunk_size):
-                response = requests.put(url, files={"file": chunk},
-                                        headers={
-                                            'Transfer-Encoding': 'chunked'})
-            exiter.exit_zupload()
-            ###
             if base_info['handlers']['upload_data'] and \
                     'file_data_url' in base_info.keys():
-                url = base_info['file_data_url']
-                data = open(file=base_info['file_path'], mode='rb')
-                cookies = tools.load_cookie()
-                upload_data_response = requests.put(
-                    url=url,
-                    data=data,
-                    cookies=cookies
-                )
-                exiter.exit_zupload()
-                if upload_data_response.status_code == 200:
-                    base_info['pid'] = upload_data_response.text
-                else:
+                args = {
+                    'url': base_info['file_data_url'],
+                    'cookies': tools.load_cookie(),
+                    'headers': {'Content-Type': 'application/octet-stream'},
+                    'data': open(file=base_info['file_path'], mode='rb')
+                }
+                response = tools.handle_request(request='put', args=args)
+                if response.status_code != 200:
                     exiter.exit_zupload(
                         exit_type='upload_data',
                         info=dict({
-                            'status_code': upload_data_response.status_code,
-                            'text': upload_data_response.text,
+                            'status_code': response.status_code,
+                            'text': response.text,
                             'file_name': base_info['file_name']
                         }))
-            tools.progress_bar(operation='upload_data',
-                               current=index+1,
-                               total=total,
-                               additional_info=dict({
-                                   'file_name': base_info['file_name']
-                               }))
+                # response = requests.put(
+                #     url=base_info['file_data_url'],
+                #     cookies=tools.load_cookie(),
+                #     headers={'Content-Type': 'application/octet-stream'},
+                #     data=open(file=base_info['file_path'], mode='rb')
+                # )
+                tools.progress_bar(operation='upload_data',
+                                   current=index+1,
+                                   total=total,
+                                   additional_info=dict({
+                                       'file_name': base_info['file_name'],
+                                       'response': response
+                                   }))
         self.store_current_archive()
         return
 

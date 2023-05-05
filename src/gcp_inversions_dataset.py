@@ -20,7 +20,7 @@ import src.exiter as exiter
 import src.tools as tools
 
 
-class OneTimeDataset(dataset.Dataset):
+class GcpInversionsDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
         super().__init__(reason, interactive)
         # Todo: Need a proper way to find and exclude variables.
@@ -138,13 +138,13 @@ class OneTimeDataset(dataset.Dataset):
                                    }))
             if not base_info['handlers']['upload_metadata']:
                 continue
-            # xarray_dataset = xarray.open_dataset(base_info['file_path'])
-            # if len(xarray_dataset.creation_date) < 16:
-            #     creation_date = datetime.strptime(
-            #         xarray_dataset.creation_date, '%Y-%m-%d')
-            # else:
-            #     creation_date = datetime.strptime(
-            #         xarray_dataset.creation_date, '%Y-%m-%d %H:%M')
+            xarray_dataset = xarray.open_dataset(base_info['file_path'])
+            if len(xarray_dataset.creation_date) < 16:
+                creation_date = datetime.strptime(
+                    xarray_dataset.creation_date, '%Y-%m-%d')
+            else:
+                creation_date = datetime.strptime(
+                    xarray_dataset.creation_date, '%Y-%m-%d %H:%M')
             base_info['json'] = dict({
                 'fileName': base_info['file_name'],
                 'hashSum':
@@ -154,53 +154,61 @@ class OneTimeDataset(dataset.Dataset):
                 base_info['versions'][-1].rsplit('/')[-1],
                 'objectSpecification': base_info['dataset_object_spec'],
                 'references': {
-                    # 'keywords': [
-                        # keyword.strip(' ') for keyword in
-                        # xarray_dataset.keywords.split(',')
-                    # ],
+                    'keywords': [
+                        'carbon flux',
+                        'land carbon flux',
+                        'ocean carbon flux',
+                        'GCB2022',
+                        'global carbon',
+                        'project',
+                        'atmospheric',
+                        'inversions',
+                        'monthly',
+                        'co2'
+                    ],
                     'licence': constants.ICOS_LICENSE
                 },
                 'specificInfo': {
-                    # 'description': xarray_dataset.summary,
+                    'description': xarray_dataset.summary,
                     'production': {
                         'contributors': [
-                        #     constants.FREDERIC_CHEVALLIER,
-                        #     constants.CHRISTIAN_ROEDENBECK,
-                        #     constants.YOSUKE_NIWA,
-                        #     constants.JUNJIE_LIU,
-                        #     constants.LIANG_FENG,
-                        #     constants.PAUL_PALMER,
-                        #     constants.KEVIN_BOWMAN,
-                        #     constants.WOUTER_PETERS,
-                        #     constants.XIANGJUN_TIAN,
-                        #     constants.SHILONG_PIAO,
-                        #     constants.BO_ZHENG
+                            constants.FREDERIC_CHEVALLIER,
+                            constants.CHRISTIAN_ROEDENBECK,
+                            constants.YOSUKE_NIWA,
+                            constants.JUNJIE_LIU,
+                            constants.LIANG_FENG,
+                            constants.PAUL_PALMER,
+                            constants.KEVIN_BOWMAN,
+                            constants.WOUTER_PETERS,
+                            constants.XIANGJUN_TIAN,
+                            constants.SHILONG_PIAO,
+                            constants.BO_ZHENG
                         ],
-                        'creationDate': '2023-04-25T12:00:00Z',
-                            # creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
-                        'creator': constants.ZHENDONG_WU,
-                        'hostOrganization': constants.CARBON_PORTAL,
+                        'creationDate':
+                            creation_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'creator': constants.INGRID_LUIJKX,
+                        'hostOrganization': constants.WUR,
                         'sources': [],
                     },
-                    # 'spatial': self.get_spatial(dataset=xarray_dataset),
-                    'spatial': constants.GLOBAL_BOX,
+                    'spatial': self.get_spatial(dataset=xarray_dataset),
+                    # 'spatial': constants.GLOBAL_BOX,
                     'temporal': {
                         'interval': {
-                            'start': '1980-01-01T00:00:00Z',
-                            'stop': '2020-12-31T23:59:59Z',
-                            # 'start': xarray_dataset.time[0].dt.strftime(
-                            #         '%Y-%m-%dT%H:%M:%SZ').item(),
-                            # 'stop': xarray_dataset.time[-1].dt.strftime(
-                            #     '%Y-%m-%dT%H:%M:%SZ').item(),
+                            # 'start': '1980-01-01T00:00:00Z',
+                            # 'stop': '2020-12-31T23:59:59Z',
+                            'start': xarray_dataset.time[0].dt.strftime(
+                                    '%Y-%m-%dT%H:%M:%SZ').item(),
+                            'stop': xarray_dataset.time[-1].dt.strftime(
+                                '%Y-%m-%dT%H:%M:%SZ').item(),
                         },
-                        # 'resolution': 'monthly'
+                        'resolution': 'monthly'
                     },
-                    # 'title': xarray_dataset.title,
-                    'title': 'GAW Data',
-                    # 'variables': list(
-                    #     variable for variable in xarray_dataset.data_vars
-                    #     if variable not in self.excluded_variables
-                    # ),
+                    'title': xarray_dataset.title,
+                    # 'title': 'GAW Data',
+                    'variables': list(
+                        variable for variable in xarray_dataset.data_vars
+                        if variable not in self.excluded_variables
+                    ),
                 },
                 'submitterId': constants.STANDARD_SUBMITTER
             })
