@@ -14,13 +14,13 @@ import requests
 import xarray
 
 # Local application/library specific imports.
-import constants
-import dataset
-import exiter
-import tools
+import src.constants as constants
+import src.dataset as dataset
+import src.exiter as exiter
+import src.tools as tools
 
 
-class OneTimeDataset(dataset.Dataset):
+class GcpInversionsDataset(dataset.Dataset):
     def __init__(self, reason: str = None, interactive: bool = False):
         super().__init__(reason, interactive)
         # Todo: Need a proper way to find and exclude variables.
@@ -39,26 +39,29 @@ class OneTimeDataset(dataset.Dataset):
         total = len(self.input_data)
         for index, file_path in enumerate(self.input_data):
             file_name = file_path.split('/')[-1]
-            if (general_date := re.findall(r'\d{4}', file_name)) != 1:
-                user_input = tools.input_handler(
-                    operation='picker',
-                    additional_info=dict({'iterable': general_date})
-                )
-                if user_input == 'e':
-                    exiter.exit_zupload()
-                else:
-                    general_date = [user_input]
-            year = general_date[0][0:4]
-            month = general_date[0][4:6]
-            dataset_type, dataset_object_spec = self.get_file_info(file_name)
+            # Todo: This part was used for one specific type of dataset
+            #  and we probably don't need it.
+            # if (general_date := re.findall(r'\d{4}', file_name)) != 1:
+            #     user_input = tools.input_handler(
+            #         operation='picker',
+            #         additional_info=dict({'iterable': general_date})
+            #     )
+            #     if user_input == 'e':
+            #         exiter.exit_zupload()
+            #     else:
+            #         general_date = [user_input]
+            # year = general_date[0][0:4]
+            # month = general_date[0][4:6]
+            dataset_type, dataset_object_spec = \
+                tools.get_specification(file_name)
             base_key = file_name.rstrip('.nc')
             self.archive_out[base_key] = dict({
                 'file_path': file_path,
                 'file_name': file_name,
                 'dataset_type': dataset_type,
                 'dataset_object_spec': dataset_object_spec,
-                'month': month,
-                'year': year,
+                # 'month': month,
+                # 'year': year,
                 'try_ingest_components':
                     self.build_try_ingest_components(
                         file_path=file_path,
@@ -86,18 +89,23 @@ class OneTimeDataset(dataset.Dataset):
     def build_try_ingest_components(self, file_path: str = None,
                                     dataset_object_spec: str = None) -> dict:
         """Build the try-ingest command for each data file."""
-        xarray_dataset = xarray.open_dataset(file_path)
-        variable_list = list(
-            variable for variable in xarray_dataset.data_vars
-            if variable not in self.excluded_variables
-        )
-        # The variable list must be formatted like this:
-        # '["variable_1", "variable_2", ...]'
-        # Formatting like this e.g: "['variable_1', 'variable_2', ...]"
-        # will probably result in a try ingest error.
-        # This is why we use json.dumps,
-        # to create a specifically formatted string.
-        variables = f'{json.dumps(variable_list)}'
+        try:
+            xarray_dataset = xarray.open_dataset(file_path)
+        except ValueError as e:
+            variables = None
+        else:
+            variable_list = list(
+                variable for variable in xarray_dataset.data_vars
+                if variable not in self.excluded_variables
+            )
+            # The variable list must be formatted like this:
+            # '["variable_1", "variable_2", ...]'
+            # Formatting like this e.g:
+            # "['variable_1', 'variable_2', ...]"
+            # will probably result in a try ingest error.
+            # This is why we use json.dumps,
+            # to create a specifically formatted string.
+            variables = f'{json.dumps(variable_list)}'
         try_ingest_url = 'https://data.icos-cp.eu/tryingest'
         params = dict({'specUri': dataset_object_spec,
                        'varnames': variables})
@@ -105,38 +113,6 @@ class OneTimeDataset(dataset.Dataset):
                                  'params': params,
                                  'file_path': file_path}
         return try_ingest_components
-
-    @staticmethod
-    def get_file_info(file_name: str = None) -> tuple:
-        dataset_type = None
-        dataset_object_spec = None
-        if 'persector' in file_name:
-            dataset_type = 'anthropogenic emissions per sector'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'anthropogenic_emission_model_results']
-        elif 'anthropogenic' in file_name:
-            dataset_type = 'anthropogenic emissions'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'anthropogenic_emission_model_results']
-        elif 'nep' in file_name:
-            dataset_type = 'biospheric fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'biospheric_model_results']
-        elif 'fire' in file_name:
-            dataset_type = 'fire emissions'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'file_emission_model_results']
-        elif 'ocean' in file_name:
-            dataset_type = 'ocean fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'oceanic_flux_model_results']
-        elif any(part in file_name for part in [
-            'CSR', 'LUMIA', 'Priors', 'GCP'
-        ]):
-            dataset_type = 'inversion modeling spatial'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'inversion_modeling_spatial']
-        return dataset_type, dataset_object_spec
 
     # todo: Maybe multi-process this.
     def archive_json(self):
@@ -179,8 +155,16 @@ class OneTimeDataset(dataset.Dataset):
                 'objectSpecification': base_info['dataset_object_spec'],
                 'references': {
                     'keywords': [
-                        keyword.strip(' ') for keyword in
-                        xarray_dataset.keywords.split(',')
+                        'carbon flux',
+                        'land carbon flux',
+                        'ocean carbon flux',
+                        'GCB2022',
+                        'global carbon',
+                        'project',
+                        'atmospheric',
+                        'inversions',
+                        'monthly',
+                        'co2'
                     ],
                     'licence': constants.ICOS_LICENSE
                 },
@@ -207,8 +191,11 @@ class OneTimeDataset(dataset.Dataset):
                         'sources': [],
                     },
                     'spatial': self.get_spatial(dataset=xarray_dataset),
+                    # 'spatial': constants.GLOBAL_BOX,
                     'temporal': {
                         'interval': {
+                            # 'start': '1980-01-01T00:00:00Z',
+                            # 'stop': '2020-12-31T23:59:59Z',
                             'start': xarray_dataset.time[0].dt.strftime(
                                     '%Y-%m-%dT%H:%M:%SZ').item(),
                             'stop': xarray_dataset.time[-1].dt.strftime(
@@ -217,12 +204,13 @@ class OneTimeDataset(dataset.Dataset):
                         'resolution': 'monthly'
                     },
                     'title': xarray_dataset.title,
+                    # 'title': 'GAW Data',
                     'variables': list(
                         variable for variable in xarray_dataset.data_vars
                         if variable not in self.excluded_variables
                     ),
                 },
-                'submitterId': 'CP'
+                'submitterId': constants.STANDARD_SUBMITTER
             })
             json_file_name = base_key + '.json'
             json_file_path = os.path.join(self.json_standalone_files,

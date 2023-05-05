@@ -1,9 +1,10 @@
 import sys
-import tools
-import cte_hr_dataset
-import lpj_guess_dataset
-import one_time_dataset
-import remote_sensing_dataset
+import src.tools as tools
+from src import NEEDS_UPDATING_lpj_guess_dataset
+from src import cte_hr_dataset
+from src import gcp_inversions_dataset
+from src import remote_sensing_dataset
+from src import vprm_dataset
 
 if __name__ == '__main__':
     if len(sys.argv) == 2:
@@ -18,7 +19,7 @@ if __name__ == '__main__':
         # Bit handler 7: overwrite archive in.
         #              1234567
         static_mode = '1111111'
-        static_mode = '0100110'
+        static_mode = '1101110'
         skipping_handlers = tools.parse_arguments(static_mode)
     # LPJ-GUESS
     # my_class = lpj_guess_dataset.LpjGuessDataset(
@@ -36,9 +37,13 @@ if __name__ == '__main__':
     # my_class = remote_sensing_dataset.RemoteSensingDataset(
     #     reason='landsat').one_shot(skipping_handlers)
 
-    # ONE-TIME
-    my_class = one_time_dataset.OneTimeDataset(
-        reason='one_time').one_shot(skipping_handlers)
+    # GCP-INVERSIONS
+    # my_class = gcp_inversions_dataset.GcpInversionsDataset(
+    #     reason='gcp_inversion').one_shot(skipping_handlers)
+
+    # GCP-INVERSIONS
+    my_class = vprm_dataset.VprmDataset(
+        reason='vprm').one_shot(skipping_handlers)
 
 
     # skipping_handlers = tools.parse_arguments(sys.argv[1])

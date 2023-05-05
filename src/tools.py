@@ -15,9 +15,9 @@ import requests
 from icoscp.sparql.runsparql import RunSparql
 
 # Local application/library specific imports.
-import constants
-import exiter
-import tools
+import src.constants as constants
+import src.exiter as exiter
+import src.tools as tools
 
 
 def read_json(path: str = None, json_data: str = None):
@@ -128,14 +128,21 @@ def parse_arguments(mode: str = None) -> dict:
 
 
 def find_files(search_string: str = None) -> list:
-    split_search_string = search_string.rsplit('/', 1)
-    directory = split_search_string[0]
-    regex = split_search_string[1]
-    pattern = re.compile(f'{regex}')
+    """Find and return files using regular expressions."""
     found_files = list()
-    for file_name in os.listdir(directory):
-        if pattern.match(file_name):
-            found_files.append(os.path.join(directory, file_name))
+    # `search_string` is assigned a singular file.
+    if os.path.exists(search_string) and os.path.isfile(search_string):
+        found_files.append(search_string)
+    # `search_string` is assigned a path concatenated with a regular
+    # expression.
+    else:
+        split_search_string = search_string.rsplit('/', 1)
+        directory = split_search_string[0]
+        regex = split_search_string[1]
+        pattern = re.compile(f'{regex}')
+        for file_name in os.listdir(directory):
+            if pattern.match(file_name):
+                found_files.append(os.path.join(directory, file_name))
     return sorted(found_files)
 
 
@@ -147,14 +154,18 @@ def request_rest_countries():
 
 
 # Todo: Maybe rename this function.
-def get_request(url: str = None):
-    """Send and handle a get request."""
+def handle_request(request: str = None, args: dict = None):
+    """Send and handle a request."""
     response = None
     try:
-        response = requests.get(url=url)
+        if request == 'get':
+            response = requests.get(**args)
+        elif request == 'put':
+            response = requests.put(**args)
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
-        print(e)
+        print('zois')
+        pass
     else:
         if response.status_code == 200:
             pass
@@ -271,25 +282,36 @@ def get_specification(file_name: str = None) -> tuple:
     dataset_object_spec = None
     if 'persector' in file_name:
         dataset_type = 'anthropogenic emissions per sector'
-        dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['anthropogenic_emission_model_results']
     elif 'anthropogenic' in file_name:
         dataset_type = 'anthropogenic emissions'
-        dataset_object_spec = constants.OBJECT_SPECS['anthropogenic_emission_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['anthropogenic_emission_model_results']
     elif 'nep' in file_name:
         dataset_type = 'biospheric fluxes'
-        dataset_object_spec = constants.OBJECT_SPECS['biospheric_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['biospheric_model_results']
     elif 'fire' in file_name:
         dataset_type = 'fire emissions'
-        dataset_object_spec = constants.OBJECT_SPECS['file_emission_model_results']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['file_emission_model_results']
     elif 'ocean' in file_name:
         dataset_type = 'ocean fluxes'
-        dataset_object_spec = constants.OBJECT_SPECS['oceanic_flux_model_results']
-    elif any(part in file_name for part in ['CSR', 'LUMIA', 'Priors']):
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['oceanic_flux_model_results']
+    elif any(part in file_name for part in ['CSR', 'LUMIA', 'Priors', 'GCP']):
         dataset_type = 'inversion modeling spatial'
-        dataset_object_spec = constants.OBJECT_SPECS['inversion_modeling_spatial']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['inversion_modeling_spatial']
     elif 'zip' in file_name:
         dataset_type = 'model data archive'
-        dataset_object_spec = constants.OBJECT_SPECS['model_data_archive']
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['model_data_archive']
+    elif 'VPRM' in file_name:
+        dataset_type = 'biosphere modeling spatial'
+        dataset_object_spec = \
+            constants.OBJECT_SPECS['biosphere_modeling_spatial']
     return dataset_type, dataset_object_spec
 
 
@@ -320,8 +342,9 @@ def obtain_rest_countries():
             download_boxes = False
             if input_handler(operation='download_rest_countries') == 'Y':
                 download_boxes = True
+            args = {'url': constants.REST_COUNTRIES}
             downloaded_rest_countries = \
-                tools.get_request(url=constants.REST_COUNTRIES).json()
+                tools.handle_request(request='get', args=args).json()
             rest_countries = dict()
             total = len(downloaded_rest_countries)
             for index, country in enumerate(downloaded_rest_countries):
@@ -352,7 +375,11 @@ def obtain_rest_countries():
                         f'country={country_name_nominatim}'
                         f'&format=json&polygon=0'
                     )
-                    country_coordinates = tools.get_request(box_url).json()
+                    args = {'url': box_url}
+                    country_coordinates = tools.handle_request(
+                        request='get',
+                        args=args
+                    ).json()
                     bounding_box = country_coordinates[0]['boundingbox'] \
                         if country_coordinates else []
                 # Fill in the countries' dictionary with country name,
@@ -429,8 +456,16 @@ def progress_bar(operation: str = None, current: int = None,
             f'\tUploaded meta-data for file: {additional_info["file_name"]}'
         )
     elif operation == 'upload_data':
+        prepender = '\t'
+        upload_info = (
+            f'\tUploaded data for file: {additional_info["file_name"]} | '
+            f'status code: {additional_info["response"].status_code} | '
+            f'response text: {additional_info["response"].text}'
+        )
+        print(upload_info)
+    elif operation == 'chunk':
         prepender = (
-            f'\tUploaded data for file: {additional_info["file_name"]}'
+            f'\tUploading data: '
         )
     fraction = current / total
     arrow = int(fraction * bar_length - 1) * '-' + '>'

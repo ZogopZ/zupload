@@ -25,7 +25,7 @@ import xarray
 
 # Local application/library specific imports.
 import constants
-import dataset
+import src.dataset as dataset
 import lpj_guess_dataset
-import cte_hr_dataset
-import tools
+import src.cte_hr_dataset as cte_hr_dataset
+import src.tools as tools

@@ -14,10 +14,10 @@ import requests
 import xarray
 
 # Local application/library specific imports.
-import constants
-import dataset
-import exiter
-import tools
+import src.constants as constants
+import src.dataset as dataset
+import src.exiter as exiter
+import src.tools as tools
 
 
 class CteHrDataset(dataset.Dataset):
@@ -37,7 +37,8 @@ class CteHrDataset(dataset.Dataset):
                                                'general_date': general_date}))
             year = general_date[0][0:4]
             month = general_date[0][4:6]
-            dataset_type, dataset_object_spec = self.get_file_info(file_name)
+            dataset_type, dataset_object_spec = \
+                tools.get_specification(file_name)
             base_key = file_name.rstrip('.nc')
             self.archive_out[base_key] = dict({
                 'file_path': file_path,
@@ -89,32 +90,6 @@ class CteHrDataset(dataset.Dataset):
                                  'params': params,
                                  'file_path': file_path}
         return try_ingest_components
-
-    @staticmethod
-    def get_file_info(file_name: str = None) -> tuple:
-        dataset_type = None
-        dataset_object_spec = None
-        if 'persector' in file_name:
-            dataset_type = 'anthropogenic emissions per sector'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'anthropogenic_emission_model_results']
-        elif 'anthropogenic' in file_name:
-            dataset_type = 'anthropogenic emissions'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'anthropogenic_emission_model_results']
-        elif 'nep' in file_name:
-            dataset_type = 'biospheric fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'biospheric_model_results']
-        elif 'fire' in file_name:
-            dataset_type = 'fire emissions'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'file_emission_model_results']
-        elif 'ocean' in file_name:
-            dataset_type = 'ocean fluxes'
-            dataset_object_spec = constants.OBJECT_SPECS[
-                'oceanic_flux_model_results']
-        return dataset_type, dataset_object_spec
 
     # todo: Maybe multi-process this.
     def archive_json(self):
