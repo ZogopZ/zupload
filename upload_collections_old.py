@@ -202,7 +202,7 @@ def extract_cte_hr_collections(df_collections: pandas.DataFrame = None):
 
 if __name__ == '__main__':
     extract_cte_hr_collections(tools.download_collections())
-    archive_in = tools.read_json(path='input-files/cte-hr/in-out-archives/cte_hr.json')
+    archive_in = tools.read_json(path='input-files/cte-hr-2/in-out-archives/cte_hr.json')
 
     # Construct and upload monthly collections.
     extract_monthly_collections(archive=archive_in)

@@ -1,0 +1,12 @@
+prefix cpmeta: <http://meta.icos-cp.eu/ontologies/cpmeta/>
+prefix dcterms: <http://purl.org/dc/terms/>
+select ?coll ?title where{
+    ?coll a cpmeta:Collection .
+    OPTIONAL{?coll cpmeta:hasDoi ?doi}
+    ?coll dcterms:title ?title .
+    FILTER NOT EXISTS {[] cpmeta:isNextVersionOf ?coll}
+    OPTIONAL{?coll cpmeta:hasCitationString ?citation}
+    OPTIONAL{?doc cpmeta:hasBiblioInfo ?bibinfo}
+    FILTER(STRSTARTS(str(?coll), "https://meta.icos-cp.eu/"))
+}
+order by ?title

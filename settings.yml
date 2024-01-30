@@ -1,0 +1,29 @@
+reason: fluxcom-nee
+
+archive_files: false
+try_ingest: false
+archive_json: false
+upload_meta_data: true
+upload_data: true
+
+upload_to_production: true
+
+master_dir: "archives/fluxcom-nee"
+archive_path: "archives/fluxcom-nee/archive.json"
+json_standalone_files: "archives/fluxcom-nee/json-standalone-files/"
+json_collection_standalone_files: "archives/fluxcom-nee/json-collection-standalone-files/"
+
+data_dir: "/home/zois/ftp.bgc-jena.mpg.de/outgoing/uweber/FLUXCOM-X/NEE/."
+pattern: "*"
+
+previous_collection: null
+try_ingest_subprocesses: 1
+show_input_files: true
+show_progress_archive_files: true
+show_progress_try_ingest: true
+show_progress_archive_json: true
+show_progress_upload_meta_data: true
+show_progress_upload_data: true
+
+overwrite_archive: true
+

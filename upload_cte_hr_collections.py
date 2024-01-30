@@ -1,14 +1,18 @@
+# Format read from https://peps.python.org/pep-0008/#imports.
+# Standard library imports.
+from _collections import OrderedDict
+from pprint import pprint
+import os
 import time
 
+# Related third party imports.
+from icoscp.sparql.runsparql import RunSparql
 import pandas
 import requests
-import constants
-from pprint import pprint
-import src.tools as tools
-import os
-import subprocess
-from _collections import OrderedDict
-from icoscp.sparql.runsparql import RunSparql
+
+# Local application/library specific imports.
+from src import constants, tools
+
 
 monthly_collections = OrderedDict()
 
@@ -23,7 +27,10 @@ def extract_monthly_collections(archive=None):
         monthly_collections[reconstructed_key]['members'].setdefault(component, monthly_component['file_metadata_url'])
     # Archive meta-data for each collection.
     current_monthly_collections = tools.read_json('monthly_collections.json')
-    json_collection_files = 'input-files/json-standalone-collection-files'
+    json_collection_files = \
+        'input-files/cte-hr/json-standalone-collection-files'
+    if not os.path.exists(json_collection_files):
+        os.mkdir(json_collection_files)
     collections_to_upload = 0
     for collection_key, collection_info in monthly_collections.items():
         if collection_key not in current_monthly_collections.keys():
@@ -232,26 +239,29 @@ def extract_cte_hr_collections(df_collections: pandas.DataFrame = None):
 if __name__ == '__main__':
     # Download all collections and extract the cte-hr collections.
     extract_cte_hr_collections(download_collections())
-    archive_in = tools.read_json(path='input-files/cte-hr/in-out-archives/cte_hr.json')
+    archive_in = tools.read_json(path='input-files/cte-hr-4/in-out-archives/cte_hr.json')
 
     # Construct and upload monthly collections.
     extract_monthly_collections(archive=archive_in)
 
     # You just uploaded a new monthly collection of 5 components.
     # REST BY HAND
-    ### 1.
+    ### 1. We are currently here: https://meta.icos-cp.eu/collections/DVZgivZnROyWcFpSyGDoMUAY (replace this when you have finished step 1)
     # a. Upload a new yearly version that also includes the
     # aforementioned newly uploaded monthly collection if it belongs
     # to the same year.
     # or
     # b. Upload a new yearly collection that includes the aforementioned
     # newly uploaded monthly collection.
+
     ### 2. https://doi.org/10.18160/20Z1-AYJ2
-    # a. Upload a new version for the aforementioned DOI. The last
-    # yearly collection of the DOI must be updated to its new version.
+    # a. Upload a new version for the aforementioned DOI's metadata landing
+    # page The last yearly collection of the DOI must be updated to its new
+    # version.
     # or
     # b. Upload a new version for the aforementioned DOI. Add the new
     # yearly collection to the list of collections.
+
     ### 3. https://doi.org/10.18160/20Z1-AYJ2
     # Update the Target URL in the doi app to the latest version of the full collection.
 

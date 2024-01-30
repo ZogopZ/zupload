@@ -1,0 +1,7 @@
+CP_COLLECTIONS = "https://meta.icos-cp.eu/collections/"
+CP_META = "http://meta.icos-cp.eu/resources/cpmeta/"
+CP_TRY_INGEST = "https://data.icos-cp.eu/tryingest"
+METADATA_UPLOAD_URL = "https://meta.icos-cp.eu/upload"
+METASTAGING_UPLOAD_URL = "https://metastaging.icos-cp.eu/upload"
+REST_COUNTRIES = "https://restcountries.com/v3.1/all"
+WHO_AM_I = "https://cpauth.icos-cp.eu/whoami"

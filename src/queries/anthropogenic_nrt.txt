@@ -1,0 +1,17 @@
+prefix cpmeta: <http://meta.icos-cp.eu/ontologies/cpmeta/>
+prefix prov: <http://www.w3.org/ns/prov#>
+prefix xsd: <http://www.w3.org/2001/XMLSchema#>
+select ?dobj ?hasNextVersion ?spec ?fileName ?size ?submTime ?timeStart ?timeEnd
+where {
+	VALUES ?spec {<http://meta.icos-cp.eu/resources/cpmeta/anthropogenicEmissionModelResults>}
+	?dobj cpmeta:hasObjectSpec ?spec .
+	BIND(EXISTS{[] cpmeta:isNextVersionOf ?dobj} AS ?hasNextVersion)
+	?dobj cpmeta:hasSizeInBytes ?size .
+?dobj cpmeta:hasName ?fileName .
+?dobj cpmeta:wasSubmittedBy/prov:endedAtTime ?submTime .
+?dobj cpmeta:hasStartTime | (cpmeta:wasAcquiredBy / prov:startedAtTime) ?timeStart .
+?dobj cpmeta:hasEndTime | (cpmeta:wasAcquiredBy / prov:endedAtTime) ?timeEnd .
+	FILTER NOT EXISTS {[] cpmeta:isNextVersionOf ?dobj}
+FILTER( ?submTime <= '2023-11-23T23:00:00.000Z'^^xsd:dateTime )
+}
+order by asc(?fileName)
