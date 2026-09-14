@@ -57,8 +57,7 @@ BASE_COLUMNS = [
     'keywords',
     'licenseName',
     'licenseUrl',
-    # The trailing space here is load-bearing; see CLAUDE.md.
-    'abstract/description ',
+    'abstract/description',
     'comment',
     'submitterID',
     'landingPageURI',
@@ -268,8 +267,7 @@ def dto_to_row(dto: dict, obj_json: dict | None, landing_uri: str) -> dict[str, 
         put('stopCov', interval.get('stop'))
     elif dataset_type == 'spatioTemporal':
         put('title', specific_info.get('title'))
-        # The trailing space in this column name is load-bearing; see CLAUDE.md.
-        put('abstract/description ', specific_info.get('description'))
+        put('abstract/description', specific_info.get('description'))
         temporal = specific_info.get('temporal') or {}
         interval = temporal.get('interval') or {}
         put('startCov', interval.get('start'))

@@ -152,6 +152,81 @@ def get_conf(file_path: Path) -> EnvriConfig:
     return ENVRIES[portal_key]
 
 
+def strip_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Return df with leading and trailing whitespace stripped from column names.
+
+    A header typed with a stray space is the same column as far as a reader is
+    concerned, so the rest of zupload should never have to spell one out. When two
+    headers would collapse onto the same name the first one wins and the second keeps
+    the name it was written with, because dropping it or letting pandas hold two
+    identical labels would lose a column of the user's data.
+    """
+    taken: set[Any] = set()
+    renamed: list[Any] = []
+    for name in df.columns:
+        candidate = name.strip() if isinstance(name, str) else name
+        if candidate in taken:
+            clash = candidate
+            candidate = name
+            suffix = 1
+            while candidate in taken:
+                candidate = f'{name}.{suffix}'
+                suffix += 1
+            typer.echo(
+                f'Warning: upload_meta column "{name}" is the same as an earlier '
+                f'column once whitespace is stripped ("{clash}"). Keeping the first '
+                f'one, and reading this one as "{candidate}".'
+            )
+        taken.add(candidate)
+        renamed.append(candidate)
+    if renamed == list(df.columns):
+        return df
+    df = df.copy()
+    df.columns = renamed
+    return df
+
+
+def read_upload_meta(file_path: str | Path) -> pd.DataFrame:
+    """Read the upload_meta sheet, with whitespace stripped from every column name."""
+    df = pd.read_excel(file_path, sheet_name='upload_meta')
+    return strip_column_names(df)
+
+
+def header_index(ws) -> dict[Any, int]:
+    """Map each header cell of an openpyxl sheet to its column number, ignoring whitespace.
+
+    Lookups go through the stripped name while writes land in the column the sheet
+    already has, so a header carrying a stray space is filled in place instead of being
+    shadowed by a freshly appended duplicate. Where two headers strip to the same name
+    the first one wins, matching strip_column_names.
+    """
+    headers: dict[Any, int] = {}
+    for number, cell in enumerate(ws[1], start=1):
+        value = cell.value
+        if value is None:
+            continue
+        key = value.strip() if isinstance(value, str) else value
+        if key not in headers:
+            headers[key] = number
+    return headers
+
+
+def ensure_header(ws, headers: dict[Any, int], column: str) -> tuple[int, bool]:
+    """Return the column number for column, appending the header if the sheet lacks it.
+
+    The second element of the return value says whether the column had to be created.
+    A created column is written with the canonical name, free of stray whitespace.
+    """
+    key = column.strip()
+    number = headers.get(key)
+    if number is not None:
+        return number, False
+    number = ws.max_column + 1
+    ws.cell(row=1, column=number).value = key
+    headers[key] = number
+    return number, True
+
+
 def get_cookie_jar() -> RequestsCookieJar:
     cookie_string = icos.auth.get_token().cookie_value
     cookie_dict = {

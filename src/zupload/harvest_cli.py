@@ -12,7 +12,6 @@ upload as a new version.
 from pathlib import Path
 from typing import Any
 # Related third party imports.
-import pandas as pd
 import typer
 from openpyxl import Workbook, load_workbook
 # Local application/library specific imports.
@@ -29,7 +28,7 @@ from zupload.metadata_fetch import (
     portal_for_host,
     values_equal,
 )
-from zupload.utils import get_conf
+from zupload.utils import ensure_header, get_conf, header_index, read_upload_meta
 
 app = typer.Typer(help='Fill spreadsheet metadata columns from the portal.')
 
@@ -145,7 +144,7 @@ def _reject_generate_conflicts(spreadsheet: str | None, rows: str | None, overwr
 
 def _harvest(spreadsheet: Path, rows: str | None, overwrite: bool, dry_run: bool) -> None:
     envri_conf = get_conf(file_path=spreadsheet)
-    df = pd.read_excel(spreadsheet, sheet_name='upload_meta')
+    df = read_upload_meta(spreadsheet)
     if 'landingPageURI' not in df.columns:
         typer.echo('The upload_meta sheet has no landingPageURI column.')
         typer.echo('harvest reads that column to know which objects to fetch, so there is nothing to do.')
@@ -415,17 +414,16 @@ def _write_back(spreadsheet: Path, updates: list[tuple[int, str, Any]], dry_run:
         return
     wb = load_workbook(spreadsheet)
     ws = wb['upload_meta']
-    headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
+    # Headers are matched with whitespace stripped, so a column the sheet already has
+    # is filled in place rather than shadowed by a second one with the tidy name.
+    headers = header_index(ws)
     col_index: dict[str, int] = {}
     added_columns: list[str] = []
     for _, column, _ in updates:
         if column in col_index:
             continue
-        column_number = headers.get(column)
-        if column_number is None:
-            column_number = ws.max_column + 1
-            ws.cell(row=1, column=column_number).value = column
-            headers[column] = column_number
+        column_number, created = ensure_header(ws, headers, column)
+        if created:
             added_columns.append(column)
         col_index[column] = column_number
     for sheet_row, column, value in updates:

@@ -56,7 +56,7 @@ REQUIRED_COLUMNS = [
 
 
 OPTIONAL_COLUMNS = [
-    'abstract/description ',
+    'abstract/description',
     'coverageURI',
     'documentationURI',
     'hashSum',
@@ -97,16 +97,7 @@ def validate_columns(df, dataset_type: str | None = None) -> list[tuple[str, str
     if dataset_type in (None, 'spatioTemporal'):
         optional_columns += SPATIOTEMPORAL_OPTIONAL_COLUMNS
     for column in optional_columns:
-        if column == 'abstract/description ':
-            if (
-                'abstract/description ' not in df.columns
-                and 'abstract/description' not in df.columns
-            ):
-                issues.append((
-                    'warning',
-                    'abstract/description column is optional and is missing from the upload_meta sheet',
-                ))
-        elif column not in df.columns:
+        if column not in df.columns:
             issues.append((
                 'warning',
                 f'{column} column is optional and is missing from the upload_meta sheet',

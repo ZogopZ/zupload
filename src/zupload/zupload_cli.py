@@ -22,8 +22,11 @@ import requests
 # Local application/library specific imports.
 from zupload.utils import (
     calculate_hashsum,
+    ensure_header,
     get_conf,
     get_cookie_jar,
+    header_index,
+    read_upload_meta,
     write_json,
     get_prev_by_name,
     get_dataset_type
@@ -120,7 +123,7 @@ def _fix_next_version_ids(df, spreadsheet: str | Path) -> tuple[int, int, Any]:
         df.at[idx, 'isNextVersionOf'] = fixed
     wb = load_workbook(spreadsheet)
     ws = wb['upload_meta']
-    headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
+    headers = header_index(ws)
     column = headers.get('isNextVersionOf')
     if column is None:
         raise ValueError('isNextVersionOf column is missing from the upload_meta sheet')
@@ -243,7 +246,7 @@ def validate(
 ):
     """Check upload_meta rows for metadata problems without uploading or changing the spreadsheet."""
     spreadsheet = resolve_spreadsheet(spreadsheet)
-    df = pd.read_excel(spreadsheet, sheet_name='upload_meta')
+    df = read_upload_meta(spreadsheet)
     try:
         envri_conf = get_conf(file_path=spreadsheet)
     except typer.Exit:
@@ -311,14 +314,10 @@ def validate(
             if updates:
                 wb = load_workbook(spreadsheet)
                 ws = wb['upload_meta']
-                headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
+                headers = header_index(ws)
                 col_index = {}
                 for col_name in ('fileLocation', 'hashSum'):
-                    c = headers.get(col_name)
-                    if c is None:
-                        c = ws.max_column + 1
-                        ws.cell(row=1, column=c).value = col_name
-                    col_index[col_name] = c
+                    col_index[col_name], _ = ensure_header(ws, headers, col_name)
                 for sheet_row, col_name, value in updates:
                     ws.cell(row=sheet_row, column=col_index[col_name]).value = value
                 wb.save(spreadsheet)
@@ -524,20 +523,13 @@ def main(
                     raise typer.Abort()
         wb = load_workbook(spreadsheet)
         ws = wb['upload_meta']
-        headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
-        data_url_col = headers.get('dataUploadUrl')
-        if data_url_col is None:
-            data_url_col = ws.max_column + 1
-            ws.cell(row=1, column=data_url_col).value = 'dataUploadUrl'
-        landing_col = headers.get('landingPageURI')
-        if landing_col is None:
-            landing_col = ws.max_column + 1
-            ws.cell(row=1, column=landing_col).value = 'landingPageURI'
-        hash_col = headers.get('hashSum')
-        if hash_col is None:
-            hash_col = ws.max_column + 1
-            ws.cell(row=1, column=hash_col).value = 'hashSum'
-        df = pd.read_excel(spreadsheet, sheet_name='upload_meta')
+        # Headers match with whitespace stripped, so a column the sheet already
+        # carries is written in place rather than duplicated under a tidier name.
+        headers = header_index(ws)
+        data_url_col, _ = ensure_header(ws, headers, 'dataUploadUrl')
+        landing_col, _ = ensure_header(ws, headers, 'landingPageURI')
+        hash_col, _ = ensure_header(ws, headers, 'hashSum')
+        df = read_upload_meta(spreadsheet)
         if rows is not None:
             df = select_rows(df, rows)
         dataset_type = _detect_dataset_type(df, envri_conf)
@@ -670,7 +662,7 @@ def generate(
             if not output.exists():
                 typer.echo(f'Cannot update columns: output file does not exist: {output}')
                 raise typer.Exit(code=1)
-            alias_map = {'description': 'abstract/description '}
+            alias_map = {'description': 'abstract/description'}
             selected_input = [c.strip() for c in update_columns.split(',') if c.strip()]
             selected = [alias_map.get(c, c) for c in selected_input]
             if not selected:
@@ -681,7 +673,7 @@ def generate(
                 typer.echo('Cannot update columns: sheet "upload_meta" not found.')
                 raise typer.Exit(code=1)
             ws = wb['upload_meta']
-            headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
+            headers = header_index(ws)
             missing = [c for c in selected if c not in headers]
             if missing:
                 typer.echo(f'Columns not found in upload_meta: {", ".join(missing)}')
@@ -712,7 +704,7 @@ def generate(
             wb_prev = load_workbook(output, data_only=True)
             if 'upload_meta' in wb_prev.sheetnames:
                 ws_prev = wb_prev['upload_meta']
-                headers = {cell.value: i for i, cell in enumerate(ws_prev[1], start=1)}
+                headers = header_index(ws_prev)
                 loc_idx = headers.get('fileLocation')
                 hash_idx = headers.get('hashSum')
                 prev_idx = headers.get('isNextVersionOf')
@@ -801,7 +793,7 @@ def generate(
                     meta['keywords'],
                     meta['licenseName'],
                     meta['licenseUrl'],
-                    meta['abstract/description '],
+                    meta['abstract/description'],
                     meta['comment'],
                     meta['submitterID'],
                     meta['landingPageURI'],
@@ -850,7 +842,7 @@ def generate(
             'keywords',
             'licenseName',
             'licenseUrl',
-            'abstract/description ',
+            'abstract/description',
             'comment',
             'submitterID',
             'landingPageURI',
@@ -916,7 +908,7 @@ def build_static_cities_meta(description: str, for_station: str) -> dict[str, st
         ]),
         'licenseName': 'ICOS CCBY4 Data Licence',
         'licenseUrl': 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence',
-        'abstract/description ': description,
+        'abstract/description': description,
         'comment': (
             'In this version, the axis definition follows the netCDF C API requirements. '
             'Please note that the netCDF C API (this file) interprets data as row major, '
@@ -1006,11 +998,7 @@ def _nan_to_none(obj):
 
 
 def make_json(meta: Series, dataset_type: DatasetType = 'spatioTemporal'):
-    description = (
-        meta['abstract/description ']
-        if 'abstract/description ' in meta
-        else meta.get('abstract/description', '')
-    )
+    description = meta.get('abstract/description', '')
     spatial_raw = meta.get('coverageURI')
     spatial = None
     if not pd.isna(spatial_raw):
