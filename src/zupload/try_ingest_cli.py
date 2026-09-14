@@ -3,14 +3,13 @@ from pathlib import Path
 import json
 from typing import Any
 # Related third party imports.
-import pandas as pd
 import requests
 import typer
 import xarray
 # Local application/library specific imports.
 from zupload.constants.excluded_vars import EXCLUDED_VARIABLES
 from zupload.constants.envri import ENVRIES, EnvriConfig, Envri
-from zupload.utils import get_conf
+from zupload.utils import get_conf, read_upload_meta
 
 app = typer.Typer(help='Try ingesting data.')
 
@@ -24,7 +23,7 @@ def main(spreadsheet: str | None = None):
         spreadsheet = matches[0]
     else: spreadsheet = Path(spreadsheet)
     envri_conf = get_conf(file_path=spreadsheet)
-    df = pd.read_excel(spreadsheet, sheet_name='upload_meta')
+    df = read_upload_meta(spreadsheet)
     for _, row in df.iterrows():
         components = build_try_ingest(file_path=Path(row['fileLocation']) / row['fileName'],
                                       obj_spec=row['objectSpecification'],

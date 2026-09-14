@@ -13,7 +13,7 @@ from halo import Halo
 import pandas as pd
 import typer
 # Local application/library specific imports.
-from zupload.constants.envri import ENVRIES, EnvriConfig, Envri
+from zupload.constants.envri import ENVRIES, DatasetType, EnvriConfig, Envri
 
 GET_PREV_BY_NAME_QUERY = """
 PREFIX cpmeta: <http://meta.icos-cp.eu/ontologies/cpmeta/>
@@ -29,6 +29,25 @@ WHERE {
     FILTER EXISTS {?dobj cpmeta:hasSizeInBytes []}
 }
 """
+
+GET_DATASET_TYPE_QUERY = """
+PREFIX cpmeta: <http://meta.icos-cp.eu/ontologies/cpmeta/>
+SELECT ?dsType
+WHERE {
+    VALUES ?spec {
+        <#http_anchor>
+        <#https_anchor>
+    }
+    ?spec cpmeta:hasSpecificDatasetType ?dsType .
+}
+"""
+
+DATASET_TYPE_BY_SEGMENT: dict[str, DatasetType] = {
+    'stationTimeSeriesDataset': 'stationTimeSeries',
+    'spatioTemporalDataset': 'spatioTemporal',
+}
+
+_DATASET_TYPE_CACHE: dict[tuple[str, str], DatasetType | None] = {}
 
 
 def calculate_hashsum(file_path: str | Path, transient: bool = False) -> str:
@@ -73,6 +92,41 @@ def get_prev_by_name(
     return prev_uri.rsplit('/', 1)[-1]
 
 
+def get_dataset_type(
+        object_spec: str,
+        portal: str = 'icos'
+) -> DatasetType | None:
+    """Ask the portal which specificInfo branch an object specification uses."""
+    portal_norm = portal.strip().lower()
+    spec_norm = object_spec.strip()
+    cache_key = (spec_norm, portal_norm)
+    if cache_key in _DATASET_TYPE_CACHE:
+        return _DATASET_TYPE_CACHE[cache_key]
+    # The metadata store holds ICOS spec URIs under http://, while spreadsheets
+    # often write https://. SPARQL treats the two as different URIs, so query both.
+    if spec_norm.startswith('https://'):
+        https_spec = spec_norm
+        http_spec = 'http://' + spec_norm[len('https://'):]
+    elif spec_norm.startswith('http://'):
+        http_spec = spec_norm
+        https_spec = 'https://' + spec_norm[len('http://'):]
+    else:
+        http_spec = spec_norm
+        https_spec = spec_norm
+    client = cities if portal_norm in {'cities', 'icoscities'} else icos
+    query = GET_DATASET_TYPE_QUERY \
+        .replace('#http_anchor', http_spec) \
+        .replace('#https_anchor', https_spec)
+    sparql_res = client.meta.sparql_select(query=query)
+    dataset_type: DatasetType | None = None
+    if sparql_res.bindings:
+        ds_type_uri = sparql_res.bindings[0]['dsType'].uri
+        segment = ds_type_uri.rsplit('/', 1)[-1]
+        dataset_type = DATASET_TYPE_BY_SEGMENT.get(segment)
+    _DATASET_TYPE_CACHE[cache_key] = dataset_type
+    return dataset_type
+
+
 def get_conf(file_path: Path) -> EnvriConfig:
     """Read portal information from spreadsheet."""
     try:
@@ -96,6 +150,81 @@ def get_conf(file_path: Path) -> EnvriConfig:
         raise typer.Exit(code=1)
     portal_key = cast(Envri, by_lower[portal_norm])
     return ENVRIES[portal_key]
+
+
+def strip_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """Return df with leading and trailing whitespace stripped from column names.
+
+    A header typed with a stray space is the same column as far as a reader is
+    concerned, so the rest of zupload should never have to spell one out. When two
+    headers would collapse onto the same name the first one wins and the second keeps
+    the name it was written with, because dropping it or letting pandas hold two
+    identical labels would lose a column of the user's data.
+    """
+    taken: set[Any] = set()
+    renamed: list[Any] = []
+    for name in df.columns:
+        candidate = name.strip() if isinstance(name, str) else name
+        if candidate in taken:
+            clash = candidate
+            candidate = name
+            suffix = 1
+            while candidate in taken:
+                candidate = f'{name}.{suffix}'
+                suffix += 1
+            typer.echo(
+                f'Warning: upload_meta column "{name}" is the same as an earlier '
+                f'column once whitespace is stripped ("{clash}"). Keeping the first '
+                f'one, and reading this one as "{candidate}".'
+            )
+        taken.add(candidate)
+        renamed.append(candidate)
+    if renamed == list(df.columns):
+        return df
+    df = df.copy()
+    df.columns = renamed
+    return df
+
+
+def read_upload_meta(file_path: str | Path) -> pd.DataFrame:
+    """Read the upload_meta sheet, with whitespace stripped from every column name."""
+    df = pd.read_excel(file_path, sheet_name='upload_meta')
+    return strip_column_names(df)
+
+
+def header_index(ws) -> dict[Any, int]:
+    """Map each header cell of an openpyxl sheet to its column number, ignoring whitespace.
+
+    Lookups go through the stripped name while writes land in the column the sheet
+    already has, so a header carrying a stray space is filled in place instead of being
+    shadowed by a freshly appended duplicate. Where two headers strip to the same name
+    the first one wins, matching strip_column_names.
+    """
+    headers: dict[Any, int] = {}
+    for number, cell in enumerate(ws[1], start=1):
+        value = cell.value
+        if value is None:
+            continue
+        key = value.strip() if isinstance(value, str) else value
+        if key not in headers:
+            headers[key] = number
+    return headers
+
+
+def ensure_header(ws, headers: dict[Any, int], column: str) -> tuple[int, bool]:
+    """Return the column number for column, appending the header if the sheet lacks it.
+
+    The second element of the return value says whether the column had to be created.
+    A created column is written with the canonical name, free of stray whitespace.
+    """
+    key = column.strip()
+    number = headers.get(key)
+    if number is not None:
+        return number, False
+    number = ws.max_column + 1
+    ws.cell(row=1, column=number).value = key
+    headers[key] = number
+    return number, True
 
 
 def get_cookie_jar() -> RequestsCookieJar:

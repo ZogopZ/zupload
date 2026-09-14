@@ -16,14 +16,18 @@ class RunLogger:
     before_ref: str
 
     @classmethod
-    def start(cls, spreadsheet: str | Path | None = None) -> "RunLogger":
+    def start(
+        cls,
+        spreadsheet: str | Path | None = None,
+        prefix: str = 'zupload',
+    ) -> "RunLogger":
         logs_root = Path.cwd() / 'logs'
         logs_root.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d-%H%M%S')
-        run_dir = logs_root / f'zupload-{ts}'
+        run_dir = logs_root / f'{prefix}-{ts}'
         suffix = 1
         while run_dir.exists():
-            run_dir = logs_root / f'zupload-{ts}-{suffix}'
+            run_dir = logs_root / f'{prefix}-{ts}-{suffix}'
             suffix += 1
         run_dir.mkdir(parents=True, exist_ok=False)
         command_line = ' '.join(shlex.quote(arg) for arg in sys.argv)

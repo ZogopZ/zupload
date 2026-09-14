@@ -154,20 +154,26 @@ inspects the spreadsheet rows and reports any problems without uploading
 anything or changing the spreadsheet. It separates findings into errors
 (clearly wrong input, such as a missing required field) and warnings (things
 that look suspicious but may be fine). It checks the metadata only, so it works
-even when the data files are not present locally.
+even when the data files are not present locally. It also reports, for each
+row, whether it can find the data file at its `fileLocation`; when a file
+cannot be found it tells you how to rerun with `--data-dir` to locate the
+files and fill in the missing details.
+
+Unlike the upload command, `validate` takes the spreadsheet as the
+`--spreadsheet` option rather than as a positional argument.
 
 ```bash
-zupload validate /path/to/spreadsheet.xlsx
+zupload validate --spreadsheet /path/to/spreadsheet.xlsx
 ```
 
 If the data files are available locally but the spreadsheet is missing their
 `hashSum` or `fileLocation`, point `validate` at the folder that contains them
-with `--data-dir`. It finds each file by name (searching subfolders as well),
-fills in `fileLocation` and `hashSum`, and writes a new `<name>.filled.xlsx`,
-leaving the original spreadsheet untouched.
+with `--data-dir`. It finds each file by name (searching subfolders as well)
+and fills in `fileLocation` and `hashSum` directly in the spreadsheet. If it
+finds no matching files under that folder, it leaves the spreadsheet unchanged.
 
 ```bash
-zupload validate /path/to/spreadsheet.xlsx --data-dir /path/to/data
+zupload validate --spreadsheet /path/to/spreadsheet.xlsx --data-dir /path/to/data
 ```
 
 The `fetch` command retrieves the existing metadata for an object from the
@@ -186,6 +192,77 @@ spreadsheet instead.
 ```bash
 zupload generate /path/to/directory
 ```
+
+## Harvesting metadata from the portal (`harvest`)
+
+`harvest` does the reverse of `zupload`: it retrieves metadata from the ICOS or Cities portal and writes it to a `zupload` spreadsheet. It does not upload anything.
+
+`harvest` is installed as a separate command rather than as a `zupload` subcommand.
+
+It can either:
+
+* create a new spreadsheet from one or more landing page URIs, or
+* fill metadata into an existing spreadsheet containing `landingPageURI` values.
+
+### Create a spreadsheet from landing pages
+
+Use `--landing-page` to create a new spreadsheet directly from portal objects:
+
+```bash
+harvest --landing-page https://meta.icos-cp.eu/objects/6TNdmGyjojb8iLTQ3acDs3-F
+harvest --landing-page <uri-a> --landing-page <uri-b> --output my_sheet.xlsx
+```
+
+The flag can be repeated to harvest several objects. Unless `--output` is given, the result is written to `harvest.xlsx`.
+
+The generated workbook contains the sheets and metadata columns expected by `zupload`. Values that cannot be obtained from the portal are left blank.
+
+In particular, `fileLocation` must be supplied locally before uploading. If the files are available on disk, it can be filled automatically with:
+
+```bash
+zupload validate --spreadsheet <sheet> --data-dir <dir>
+```
+
+The portal is inferred from the landing page URI. All objects in one generated spreadsheet must belong to the same portal.
+
+For uploads, keeping different dataset types in separate spreadsheets is recommended.
+
+### Fill an existing spreadsheet
+
+`harvest` can also populate an existing `.xlsx` file whose `upload_meta` sheet already contains `landingPageURI` values:
+
+```bash
+harvest
+harvest /path/to/spreadsheet.xlsx
+harvest sheet.xlsx --rows 5
+harvest sheet.xlsx --rows 5-12
+harvest sheet.xlsx --dry-run
+harvest sheet.xlsx --overwrite
+```
+
+By default, `harvest` fills blank cells only. Existing values that differ from the portal are kept and reported. Use `--overwrite` if you want portal values to replace them.
+
+`--dry-run` reports what would change without modifying the workbook.
+
+As with `zupload`, omitting the spreadsheet path uses the single `.xlsx` file in the current directory.
+
+### Before uploading a harvested spreadsheet
+
+A harvested spreadsheet can be reviewed, edited, and uploaded again with `zupload`.
+
+```bash
+zupload validate --spreadsheet /path/to/spreadsheet.xlsx
+zupload /path/to/spreadsheet.xlsx
+```
+
+Keep in mind:
+
+* `fileLocation` is never harvested because it refers to a local directory.
+* Uploading a harvested row updates the metadata of the existing object; it does not create a new version.
+* `isNextVersionOf` is copied from the portal and should normally be left unchanged.
+* Staging may reject references that are valid in production if the staging metadata store is not fully synchronized.
+
+`harvest` supports both the ICOS and Cities portals and writes run logs under `./logs/harvest-<timestamp>/`.
 
 ## Input spreadsheet
 
@@ -224,6 +301,12 @@ what `zupload` expects.
   spreadsheet, and following its `instructions` sheet, is strongly recommended.
 - Some spreadsheet fields are expected to contain valid JSON (for example lists
   of variables or keywords). Make sure these values use proper JSON syntax.
+- A spreadsheet produced by `harvest` still needs `fileLocation`, which is
+  never harvested because it is a local path rather than portal metadata. Run
+  `zupload validate --spreadsheet <sheet>` on a harvested sheet before
+  uploading it.
+- Uploading a harvested sheet updates the metadata of the object it was
+  harvested from; it does not create a new version of it.
 - Metadata is uploaded before data files. If metadata upload fails, the data
   file will not be uploaded.
 - Data files must be accessible from the machine running `zupload` at the paths

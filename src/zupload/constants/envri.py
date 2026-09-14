@@ -2,6 +2,7 @@ from typing import Literal, TypeAlias
 from dataclasses import dataclass
 
 Envri: TypeAlias = Literal['ICOS', 'SITES', 'ICOSCities']
+DatasetType: TypeAlias = Literal['stationTimeSeries', 'spatioTemporal']
 REST_COUNTRIES = 'https://restcountries.com/v3.1/all'
 
 

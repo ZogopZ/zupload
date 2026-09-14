@@ -22,12 +22,17 @@ import requests
 # Local application/library specific imports.
 from zupload.utils import (
     calculate_hashsum,
+    ensure_header,
     get_conf,
     get_cookie_jar,
+    header_index,
+    read_upload_meta,
     write_json,
-    get_prev_by_name
+    get_prev_by_name,
+    get_dataset_type
 )
-from zupload.constants.envri import EnvriConfig
+from zupload.cli_shared import resolve_spreadsheet, select_rows
+from zupload.constants.envri import DatasetType, EnvriConfig, ICOS_CONFIG
 from zupload.constants.object_specs import ALL_OBJECT_SPECS
 from zupload.constants.organizations import (
     ORG_DISPLAY_NAMES,
@@ -36,7 +41,12 @@ from zupload.constants.organizations import (
 from zupload.constants.stations import CITIES_FOR_STATION
 from zupload.constants.upload_descriptions import CITIES_UPLOAD_DESCRIPTIONS
 from zupload.logs import RunLogger
-from zupload.validation import validate_columns, validate_dataframe
+from zupload.metadata_fetch import _object_id
+from zupload.validation import (
+    LANDING_URL_ISSUE,
+    validate_columns,
+    validate_dataframe,
+)
 
 
 app = typer.Typer(help='Upload data & metadata to the specific portal.')
@@ -50,21 +60,130 @@ def _portal_display_name(envri_name: str) -> str:
     }.get(envri_name, envri_name.lower())
 
 
-def _resolve_spreadsheet(spreadsheet: str | None) -> Path:
-    if spreadsheet is None:
-        matches = list(Path.cwd().glob('*.xlsx'))
-        if not matches:
-            typer.echo('No .xlsx files found in current directory.')
-            raise typer.Exit(code=1)
-        if len(matches) > 1:
-            typer.echo('More than one spreadsheet found in current directory:')
-            for match in matches:
-                typer.echo(f'- {match.name}')
-            typer.echo('Please rerun by explicitly passing the spreadsheet path, for example:')
-            typer.echo('zupload ./your_spreadsheet.xlsx [options]')
-            raise typer.Exit(code=1)
-        return matches[0]
-    return Path(spreadsheet)
+def _is_blank(value: Any) -> bool:
+    """Return True when a spreadsheet cell is missing, NaN, or whitespace only."""
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        return False
+    return not str(value).strip()
+
+
+def _ids_for_cell(value: Any) -> str | None:
+    """Rewrite an isNextVersionOf cell as object ids, or return None to leave it alone.
+
+    The portal rejects a landing page URL in isNextVersionOf with HTTP 400; it wants the
+    object id at the end of that URL. The cell shape is preserved: a single URI becomes
+    a single bare id, a JSON list of URIs stays a JSON list. A cell that already holds
+    ids is returned as None so the caller skips it and the workbook is left untouched.
+    """
+    raw = str(value).strip()
+    if raw.startswith('['):
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(parsed, list):
+            return None
+        items = [str(item).strip() for item in parsed]
+        if not any(item.startswith(('http://', 'https://')) for item in items):
+            return None
+        return json.dumps([_object_id(item) for item in items])
+    if not raw.startswith(('http://', 'https://')):
+        return None
+    return _object_id(raw)
+
+
+def _fix_next_version_ids(df, spreadsheet: str | Path) -> tuple[int, int, Any]:
+    """Rewrite landing page URLs in isNextVersionOf as object ids, in the spreadsheet.
+
+    Mirrors the --data-dir path: the DataFrame is corrected so the rest of the run sees
+    the fixed values, and the same cells are written back into the workbook. When there
+    is nothing to convert the workbook is not opened at all.
+    """
+    if 'isNextVersionOf' not in df.columns:
+        return 0, 0, df
+    updates: list[tuple[Any, str]] = []
+    for idx, value in df['isNextVersionOf'].items():
+        if _is_blank(value):
+            continue
+        fixed = _ids_for_cell(value)
+        if fixed is None:
+            continue
+        updates.append((idx, fixed))
+    if not updates:
+        return 0, 0, df
+    # A row selection hands back a slice, so copy before writing into it.
+    df = df.copy()
+    df['isNextVersionOf'] = df['isNextVersionOf'].astype(object)
+    for idx, fixed in updates:
+        df.at[idx, 'isNextVersionOf'] = fixed
+    wb = load_workbook(spreadsheet)
+    ws = wb['upload_meta']
+    headers = header_index(ws)
+    column = headers.get('isNextVersionOf')
+    if column is None:
+        raise ValueError('isNextVersionOf column is missing from the upload_meta sheet')
+    for idx, fixed in updates:
+        ws.cell(row=idx + 2, column=column).value = fixed
+    wb.save(spreadsheet)
+    return len(updates), len({idx for idx, _ in updates}), df
+
+
+def _detect_dataset_type(df, envri_conf: EnvriConfig) -> DatasetType:
+    """Detect the specificInfo shape once per run from the first object specification."""
+    spec = None
+    if 'objectSpecification' in df.columns:
+        for value in df['objectSpecification']:
+            if not _is_blank(value):
+                spec = str(value).strip()
+                break
+    if spec is None:
+        typer.echo('No objectSpecification found; assuming spatioTemporal metadata.')
+        return 'spatioTemporal'
+    try:
+        dataset_type = get_dataset_type(
+            object_spec=spec,
+            portal=_portal_display_name(envri_conf.envri)
+        )
+    except Exception as e:
+        typer.echo(f'Dataset type lookup failed ({e}); assuming spatioTemporal metadata.')
+        return 'spatioTemporal'
+    if dataset_type is None:
+        typer.echo(
+            'Dataset type unknown for the object specification; '
+            'assuming spatioTemporal metadata.'
+        )
+        return 'spatioTemporal'
+    typer.echo(f'Dataset type: {dataset_type}')
+    return dataset_type
+
+
+def _resolve_known_specs(df, envri_conf: EnvriConfig) -> set[str]:
+    """Return the sheet's object specifications that the portal itself recognises."""
+    known: set[str] = set()
+    if 'objectSpecification' not in df.columns:
+        return known
+    portal = _portal_display_name(envri_conf.envri)
+    seen: set[str] = set()
+    for value in df['objectSpecification']:
+        if _is_blank(value):
+            continue
+        spec = str(value).strip()
+        if spec in seen:
+            continue
+        seen.add(spec)
+        try:
+            resolved = get_dataset_type(object_spec=spec, portal=portal)
+        except Exception:
+            # The portal is unreachable; fall back to the local spec list only.
+            return known
+        if resolved is not None:
+            known.add(spec)
+    return known
 
 
 def _to_landing_uri(pid: str) -> str:
@@ -72,51 +191,6 @@ def _to_landing_uri(pid: str) -> str:
     if pid.startswith('http://') or pid.startswith('https://'):
         return pid
     return f'https://meta.icos-cp.eu/objects/{pid}'
-
-
-def _select_rows(df, rows_value, flag='--rows'):
-    """Slice df to the given upload_meta sheet row spec ("5" or "5-12", inclusive). Returns the sliced df."""
-    value = rows_value.strip()
-    if '-' in value:
-        parts = value.split('-')
-        if len(parts) != 2 or not parts[0] or not parts[1]:
-            typer.echo(
-                f'Invalid {flag} value "{rows_value}". '
-                'Expected an integer like "5" or a range like "5-12".'
-            )
-            raise typer.Exit(code=1)
-        try:
-            start = int(parts[0])
-            end = int(parts[1])
-        except ValueError:
-            typer.echo(
-                f'Invalid {flag} value "{rows_value}". '
-                'Expected an integer like "5" or a range like "5-12".'
-            )
-            raise typer.Exit(code=1)
-        if start > end:
-            typer.echo(
-                f'Invalid {flag} range "{rows_value}": '
-                'start must be <= end.'
-            )
-            raise typer.Exit(code=1)
-    else:
-        try:
-            start = int(value)
-        except ValueError:
-            typer.echo(
-                f'Invalid {flag} value "{rows_value}". '
-                'Expected an integer like "5" or a range like "5-12".'
-            )
-            raise typer.Exit(code=1)
-        end = start
-    if start < 2 or end > (len(df) + 1):
-        typer.echo(
-            f'Invalid {flag} range "{rows_value}". '
-            f'Expected 2..{len(df) + 1} for upload_meta.'
-        )
-        raise typer.Exit(code=1)
-    return df.iloc[start - 2 : end - 1]
 
 
 @app.command()
@@ -163,21 +237,41 @@ def validate(
             None,
             '--data-dir',
             help='Locate each data file by name under this directory, then fill in fileLocation and hashSum where resolvable and update the spreadsheet in place. A backup is written under ./logs/.'
+        ),
+        fix_ids: bool = typer.Option(
+            False,
+            '--fix-ids',
+            help='Convert landing page URLs in isNextVersionOf to the object ids the portal expects and update the spreadsheet in place. A backup is written under ./logs/.'
         )
 ):
     """Check upload_meta rows for metadata problems without uploading or changing the spreadsheet."""
-    spreadsheet = _resolve_spreadsheet(spreadsheet)
-    df = pd.read_excel(spreadsheet, sheet_name='upload_meta')
-    schema_issues = validate_columns(df)
+    spreadsheet = resolve_spreadsheet(spreadsheet)
+    df = read_upload_meta(spreadsheet)
+    try:
+        envri_conf = get_conf(file_path=spreadsheet)
+    except typer.Exit:
+        typer.echo('Using icos for the dataset type lookup.')
+        envri_conf = ICOS_CONFIG
+    known_specs = _resolve_known_specs(df, envri_conf)
+    dataset_type = _detect_dataset_type(df, envri_conf)
+    schema_issues = validate_columns(df, dataset_type=dataset_type)
     resolved = 0
     ambiguous = 0
     not_found = 0
+    fixed_cells = 0
+    fixed_rows = 0
+    data_root: Path | None = None
+    run_logger: RunLogger | None = None
     if data_dir is not None:
         data_root = Path(data_dir)
         if not data_root.is_dir():
             typer.echo(f'--data-dir not found or not a directory: {data_dir}')
             raise typer.Exit(code=1)
+    # Both --data-dir and --fix-ids rewrite the workbook, so one logger covers the run:
+    # its before copy predates every edit and its after copy follows all of them.
+    if data_dir is not None or fix_ids:
         run_logger = RunLogger.start(spreadsheet=spreadsheet)
+    if data_root is not None:
         try:
             name_to_paths: dict[str, list[Path]] = {}
             for candidate in data_root.rglob('*'):
@@ -220,14 +314,10 @@ def validate(
             if updates:
                 wb = load_workbook(spreadsheet)
                 ws = wb['upload_meta']
-                headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
+                headers = header_index(ws)
                 col_index = {}
                 for col_name in ('fileLocation', 'hashSum'):
-                    c = headers.get(col_name)
-                    if c is None:
-                        c = ws.max_column + 1
-                        ws.cell(row=1, column=c).value = col_name
-                    col_index[col_name] = c
+                    col_index[col_name], _ = ensure_header(ws, headers, col_name)
                 for sheet_row, col_name, value in updates:
                     ws.cell(row=sheet_row, column=col_index[col_name]).value = value
                 wb.save(spreadsheet)
@@ -235,10 +325,24 @@ def validate(
             run_logger.finish(status='error', error=str(e))
             typer.echo(f'Failed to update spreadsheet: {e}')
             raise typer.Exit(code=1)
-        run_logger.finish(status='ok')
     if rows is not None:
-        df = _select_rows(df, rows)
-    results = validate_dataframe(df)
+        df = select_rows(df, rows)
+    if fix_ids:
+        # After the row selection, so --fix-ids touches only the rows asked for, and
+        # before validate_dataframe, so the same run reports the corrected values.
+        try:
+            fixed_cells, fixed_rows, df = _fix_next_version_ids(df, spreadsheet)
+        except Exception as e:
+            run_logger.finish(status='error', error=str(e))
+            typer.echo(f'Failed to update spreadsheet: {e}')
+            raise typer.Exit(code=1)
+    if run_logger is not None:
+        run_logger.finish(status='ok')
+    results = validate_dataframe(
+        df,
+        dataset_type=dataset_type,
+        known_specs=known_specs,
+    )
     total = len(results)
     rows_with_errors = 0
     rows_with_warnings = 0
@@ -307,7 +411,6 @@ def validate(
                 f'0 of {considered} data files found under {data_dir}. '
                 'The spreadsheet was left unchanged.'
             )
-        typer.echo(f'Logs saved to {run_logger.run_dir}')
     else:
         found = 0
         missing = 0
@@ -334,6 +437,33 @@ def validate(
                 f'  zupload validate --spreadsheet {spreadsheet} '
                 '--data-dir <path to your data files>'
             )
+    if fix_ids:
+        if fixed_cells:
+            typer.echo(
+                f'isNextVersionOf: {fixed_cells} cell(s) in {fixed_rows} row(s) '
+                'converted to object ids; spreadsheet updated.'
+            )
+        else:
+            typer.echo(
+                'isNextVersionOf: no landing page URLs to convert. '
+                'The spreadsheet was left unchanged.'
+            )
+    else:
+        url_rows = sum(
+            1 for result in results
+            if any(message == LANDING_URL_ISSUE for _, message in result['issues'])
+        )
+        if url_rows:
+            typer.echo(
+                f'isNextVersionOf: {url_rows} row(s) hold a landing page URL '
+                'where the portal needs an object id'
+            )
+            typer.echo('To convert them in place, run:')
+            typer.echo(
+                f'  zupload validate --spreadsheet {spreadsheet} --fix-ids'
+            )
+    if run_logger is not None:
+        typer.echo(f'Logs saved to {run_logger.run_dir}')
 
 
 @app.callback(invoke_without_command=True)
@@ -379,7 +509,7 @@ def main(
     try:
         if extract_json:
             upload = False
-        spreadsheet = _resolve_spreadsheet(spreadsheet)
+        spreadsheet = resolve_spreadsheet(spreadsheet)
         run_logger = RunLogger.start(spreadsheet=spreadsheet)
         envri_conf = get_conf(file_path=spreadsheet)
         if upload:
@@ -393,26 +523,35 @@ def main(
                     raise typer.Abort()
         wb = load_workbook(spreadsheet)
         ws = wb['upload_meta']
-        headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
-        data_url_col = headers.get('dataUploadUrl')
-        if data_url_col is None:
-            data_url_col = ws.max_column + 1
-            ws.cell(row=1, column=data_url_col).value = 'dataUploadUrl'
-        landing_col = headers.get('landingPageURI')
-        if landing_col is None:
-            landing_col = ws.max_column + 1
-            ws.cell(row=1, column=landing_col).value = 'landingPageURI'
-        df = pd.read_excel(spreadsheet, sheet_name='upload_meta')
+        # Headers match with whitespace stripped, so a column the sheet already
+        # carries is written in place rather than duplicated under a tidier name.
+        headers = header_index(ws)
+        data_url_col, _ = ensure_header(ws, headers, 'dataUploadUrl')
+        landing_col, _ = ensure_header(ws, headers, 'landingPageURI')
+        hash_col, _ = ensure_header(ws, headers, 'hashSum')
+        df = read_upload_meta(spreadsheet)
         if rows is not None:
-            df = _select_rows(df, rows)
+            df = select_rows(df, rows)
+        dataset_type = _detect_dataset_type(df, envri_conf)
         for idx, row in df.iterrows():
             typer.echo(f'Row {idx + 2}: {row["fileName"]}')
-            meta_json = make_json(meta=row)
+            # Read the sheet's own hashSum before make_json so a hash it computes on
+            # demand is only written back into a cell the user left blank.
+            hash_was_blank = _is_blank(row.get('hashSum'))
+            meta_json = make_json(meta=row, dataset_type=dataset_type)
             if upload:
                 data_url, landing_url = upload_meta(meta_json=meta_json, envri_conf=envri_conf, staging=staging)
                 ws.cell(row=idx + 2, column=data_url_col).value = data_url
                 ws.cell(row=idx + 2, column=landing_col).value = landing_url
+                # make_json reports hashSum None when hashing was skipped, so a value
+                # here means one was actually computed for this row.
+                new_hash = meta_json.get('hashSum')
+                hash_written = hash_was_blank and bool(new_hash)
+                if hash_written:
+                    ws.cell(row=idx + 2, column=hash_col).value = new_hash
                 wb.save(spreadsheet)
+                if hash_written:
+                    typer.echo(f'Hash written to spreadsheet: {new_hash}')
                 if not metadata_only:
                     upload_data(file_path=Path(row['fileLocation']) / row['fileName'], data_url=data_url)
             elif extract_json:
@@ -523,7 +662,7 @@ def generate(
             if not output.exists():
                 typer.echo(f'Cannot update columns: output file does not exist: {output}')
                 raise typer.Exit(code=1)
-            alias_map = {'description': 'abstract/description '}
+            alias_map = {'description': 'abstract/description'}
             selected_input = [c.strip() for c in update_columns.split(',') if c.strip()]
             selected = [alias_map.get(c, c) for c in selected_input]
             if not selected:
@@ -534,7 +673,7 @@ def generate(
                 typer.echo('Cannot update columns: sheet "upload_meta" not found.')
                 raise typer.Exit(code=1)
             ws = wb['upload_meta']
-            headers = {cell.value: i for i, cell in enumerate(ws[1], start=1)}
+            headers = header_index(ws)
             missing = [c for c in selected if c not in headers]
             if missing:
                 typer.echo(f'Columns not found in upload_meta: {", ".join(missing)}')
@@ -565,7 +704,7 @@ def generate(
             wb_prev = load_workbook(output, data_only=True)
             if 'upload_meta' in wb_prev.sheetnames:
                 ws_prev = wb_prev['upload_meta']
-                headers = {cell.value: i for i, cell in enumerate(ws_prev[1], start=1)}
+                headers = header_index(ws_prev)
                 loc_idx = headers.get('fileLocation')
                 hash_idx = headers.get('hashSum')
                 prev_idx = headers.get('isNextVersionOf')
@@ -654,7 +793,7 @@ def generate(
                     meta['keywords'],
                     meta['licenseName'],
                     meta['licenseUrl'],
-                    meta['abstract/description '],
+                    meta['abstract/description'],
                     meta['comment'],
                     meta['submitterID'],
                     meta['landingPageURI'],
@@ -703,7 +842,7 @@ def generate(
             'keywords',
             'licenseName',
             'licenseUrl',
-            'abstract/description ',
+            'abstract/description',
             'comment',
             'submitterID',
             'landingPageURI',
@@ -769,7 +908,7 @@ def build_static_cities_meta(description: str, for_station: str) -> dict[str, st
         ]),
         'licenseName': 'ICOS CCBY4 Data Licence',
         'licenseUrl': 'http://meta.icos-cp.eu/ontologies/cpmeta/icosLicence',
-        'abstract/description ': description,
+        'abstract/description': description,
         'comment': (
             'In this version, the axis definition follows the netCDF C API requirements. '
             'Please note that the netCDF C API (this file) interprets data as row major, '
@@ -858,12 +997,8 @@ def _nan_to_none(obj):
     return obj
 
 
-def make_json(meta: Series):
-    description = (
-        meta['abstract/description ']
-        if 'abstract/description ' in meta
-        else meta.get('abstract/description', '')
-    )
+def make_json(meta: Series, dataset_type: DatasetType = 'spatioTemporal'):
+    description = meta.get('abstract/description', '')
     spatial_raw = meta.get('coverageURI')
     spatial = None
     if not pd.isna(spatial_raw):
@@ -887,12 +1022,19 @@ def make_json(meta: Series):
         else str(meta.get('hashSum')).strip()
     )
     if not hash_sum:
-        data_path = Path(meta['fileLocation']) / meta['fileName']
-        if data_path.exists():
-            hash_sum = calculate_hashsum(file_path=data_path)
+        file_location = meta.get('fileLocation')
+        file_name = meta.get('fileName')
+        if _is_blank(file_location) or _is_blank(file_name):
+            typer.echo('Hash skipped (fileLocation or fileName is blank).')
         else:
-            typer.echo(f'Hash skipped (data file not found): {data_path}')
-    prev_raw = meta['isNextVersionOf']
+            # fileLocation is the directory holding the data file, so the path to the
+            # file itself is always this join.
+            data_path = Path(str(file_location).strip()) / str(file_name).strip()
+            if data_path.exists():
+                hash_sum = calculate_hashsum(file_path=data_path)
+            else:
+                typer.echo(f'Hash skipped (data file not found): {data_path}')
+    prev_raw = meta.get('isNextVersionOf')
     is_next_version_of = None
     if not pd.isna(prev_raw):
         if isinstance(prev_raw, str):
@@ -907,26 +1049,82 @@ def make_json(meta: Series):
                 is_next_version_of = stripped
         else:
             is_next_version_of = prev_raw
-    json_meta = dict({
-        'fileName': meta['fileName'],
-        'hashSum': hash_sum,
-        'isNextVersionOf': is_next_version_of,
-        'preExistingDoi': None if pd.isna(meta['doiURI']) else meta['doiURI'],
-        'objectSpecification': meta['objectSpecification'],
-        'references': {
-            'keywords': json.loads(meta['keywords']),
-            'licence': meta['licenseUrl'],
-            'autodeprecateSameFilenameObjects': False,
-            'duplicateFilenameAllowed': True,
-        },
-        'specificInfo': {
-            'title': meta['title'],
+    contributors_raw = meta.get('contributorURI')
+    # Every object the portal returns reports contributors as a list, empty rather than
+    # null, so a blank or absent cell means "no contributors" instead of "unknown".
+    if _is_blank(contributors_raw):
+        contributors = []
+    elif isinstance(contributors_raw, str):
+        contributors = json.loads(contributors_raw)
+    else:
+        contributors = contributors_raw
+    production = {
+        'creator': meta.get('creatorURI'),
+        'contributors': contributors,
+        'hostOrganization': meta.get('hostOrganizationURI'),
+        'comment': None if _is_blank(meta.get('comment')) else meta.get('comment'),
+        'sources': [],
+        'documentation': documentation,
+        'creationDate': meta.get('created'),
+    }
+    if dataset_type == 'stationTimeSeries':
+        station = meta.get('stationURI')
+        if _is_blank(station):
+            station = meta.get('forStation')
+        station = None if _is_blank(station) else str(station).strip()
+        instrument = None
+        instrument_raw = meta.get('instrumentURI')
+        if not _is_blank(instrument_raw):
+            if isinstance(instrument_raw, str):
+                stripped = instrument_raw.strip()
+                if stripped.startswith('['):
+                    try:
+                        parsed = json.loads(stripped)
+                    except json.JSONDecodeError:
+                        parsed = None
+                    instrument = parsed if isinstance(parsed, list) else stripped
+                else:
+                    instrument = stripped
+            else:
+                instrument = instrument_raw
+        sampling_height = None
+        sampling_height_raw = meta.get('samplingHeight')
+        if not _is_blank(sampling_height_raw):
+            try:
+                sampling_height = float(str(sampling_height_raw).strip())
+            except (TypeError, ValueError):
+                sampling_height = None
+        n_rows = None
+        n_rows_raw = meta.get('numRows')
+        if not _is_blank(n_rows_raw):
+            try:
+                n_rows = int(float(str(n_rows_raw).strip()))
+            except (TypeError, ValueError):
+                n_rows = None
+        acquisition_interval = None
+        if not _is_blank(meta.get('startCov')) and not _is_blank(meta.get('stopCov')):
+            acquisition_interval = {
+                'start': meta.get('startCov'),
+                'stop': meta.get('stopCov'),
+            }
+        specific_info: dict[str, Any] = {
+            'station': station,
+            'instrument': instrument,
+            'samplingHeight': sampling_height,
+            'acquisitionInterval': acquisition_interval,
+            'nRows': n_rows,
+            'production': production,
+            'spatial': spatial,
+        }
+    else:
+        specific_info = {
+            'title': meta.get('title'),
             'description': description,
             'spatial': spatial,
             'temporal': {
                 'interval': {
-                    'start': meta['startCov'],
-                    'stop': meta['stopCov'],
+                    'start': meta.get('startCov'),
+                    'stop': meta.get('stopCov'),
                 },
                 'resolution': None if pd.isna(meta.get('resolution')) else meta.get('resolution'),
             },
@@ -935,24 +1133,38 @@ def make_json(meta: Series):
                 if pd.isna(meta.get('forStation')) or not str(meta.get('forStation')).strip()
                 else meta.get('forStation')
             ),
-            'production': {
-                'creator': meta['creatorURI'],
-                'contributors': json.loads(meta['contributorURI']),
-                'hostOrganization': meta['hostOrganizationURI'],
-                    'comment':
-                        None if pd.isna(meta['comment']) else meta['comment'],
-                    'sources': [],
-                    'documentation': documentation,
-                'creationDate': meta['created'],
-            },
+            'production': production,
             'variables': (
                 None
                 if pd.isna(meta.get('variablesToIngest'))
                 or not meta.get('variablesToIngest')
-                else json.loads(meta['variablesToIngest'])
+                else json.loads(meta.get('variablesToIngest'))
             )
+        }
+    keywords_raw = meta.get('keywords')
+    # Object-level keywords are optional. The portal's own payloads omit the key entirely
+    # for objects submitted without any, and the keywords a landing page displays may
+    # belong to the object specification rather than to the object.
+    if _is_blank(keywords_raw):
+        keywords = None
+    elif isinstance(keywords_raw, str):
+        keywords = json.loads(keywords_raw)
+    else:
+        keywords = keywords_raw
+    json_meta = dict({
+        'fileName': meta.get('fileName'),
+        'hashSum': hash_sum,
+        'isNextVersionOf': is_next_version_of,
+        'preExistingDoi': None if _is_blank(meta.get('doiURI')) else meta.get('doiURI'),
+        'objectSpecification': meta.get('objectSpecification'),
+        'references': {
+            'keywords': keywords,
+            'licence': meta.get('licenseUrl'),
+            'autodeprecateSameFilenameObjects': False,
+            'duplicateFilenameAllowed': True,
         },
-        'submitterId': meta['submitterID'],
+        'specificInfo': specific_info,
+        'submitterId': meta.get('submitterID'),
     })
     return _nan_to_none(json_meta)
 
