@@ -533,18 +533,33 @@ def main(
         if landing_col is None:
             landing_col = ws.max_column + 1
             ws.cell(row=1, column=landing_col).value = 'landingPageURI'
+        hash_col = headers.get('hashSum')
+        if hash_col is None:
+            hash_col = ws.max_column + 1
+            ws.cell(row=1, column=hash_col).value = 'hashSum'
         df = pd.read_excel(spreadsheet, sheet_name='upload_meta')
         if rows is not None:
             df = select_rows(df, rows)
         dataset_type = _detect_dataset_type(df, envri_conf)
         for idx, row in df.iterrows():
             typer.echo(f'Row {idx + 2}: {row["fileName"]}')
+            # Read the sheet's own hashSum before make_json so a hash it computes on
+            # demand is only written back into a cell the user left blank.
+            hash_was_blank = _is_blank(row.get('hashSum'))
             meta_json = make_json(meta=row, dataset_type=dataset_type)
             if upload:
                 data_url, landing_url = upload_meta(meta_json=meta_json, envri_conf=envri_conf, staging=staging)
                 ws.cell(row=idx + 2, column=data_url_col).value = data_url
                 ws.cell(row=idx + 2, column=landing_col).value = landing_url
+                # make_json reports hashSum None when hashing was skipped, so a value
+                # here means one was actually computed for this row.
+                new_hash = meta_json.get('hashSum')
+                hash_written = hash_was_blank and bool(new_hash)
+                if hash_written:
+                    ws.cell(row=idx + 2, column=hash_col).value = new_hash
                 wb.save(spreadsheet)
+                if hash_written:
+                    typer.echo(f'Hash written to spreadsheet: {new_hash}')
                 if not metadata_only:
                     upload_data(file_path=Path(row['fileLocation']) / row['fileName'], data_url=data_url)
             elif extract_json:
